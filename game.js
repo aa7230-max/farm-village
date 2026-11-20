@@ -46,6 +46,7 @@ const BOSS = {
   mushroom_queen: { name: '독버섯 여왕', sprite: 'mushroom', sc: 4.3, hp: 90,  spd: .8,  dmg: 10, xp: 16, ring: true },
   zombie_king:    { name: '거대 좀비 왕', sprite: 'skeleton', sc: 6.4, hp: 150, spd: .72, dmg: 16, xp: 20, ring: true, tint: [.6, 1, .55] }
 };
+BOSS.snow_wolf = { name: '눈 늑대왕', model: 'wolf', walk: 'Walking', sc: 4.4, hp: 90, spd: .95, dmg: 12, xp: 16, ring: true, tint: [.82, .95, 1.25] };
 const SPR_FILES = {
   skeleton: ['move', 'atk', 'atk2', 'atk3', 'hit', 'death'],
   goblin: ['move', 'atk', 'atk2', 'atk3', 'hit', 'death'],
@@ -1027,7 +1028,7 @@ function spritePadFrac(k) {   // 그림 맨 아래 투명 여백 비율 (발이 
 }
 function makeMon(kind, x, z, opts) {
   const d = opts && opts.boss ? BOSS[kind] : MON[kind];
-  if (d.model && !(opts && opts.boss)) return makeMon3D(kind, x, z, d);
+  if (d.model) return makeMon3D(kind, x, z, d, opts);
   const skey = opts && opts.boss ? d.sprite : (d.sprite || kind);
   const sp = SPR[skey];
   if (!sp || !sp.move) return null;
@@ -1048,17 +1049,20 @@ function makeMon(kind, x, z, opts) {
   setAnim(m, 'move', true);
   return m;
 }
-function makeMon3D(kind, x, z, d) {
+function makeMon3D(kind, x, z, d, opts) {
   const P = MODEL3D[d.model]; if (!P) return null;
+  const boss = !!(opts && opts.boss);
   const root = THREE.SkeletonUtils.clone(P.obj);
   root.scale.setScalar(d.sc);
+  if (boss) root.traverse(o => { if (o.isMesh && o.material) { o.material = o.material.clone(); if (o.material.color) o.material.color.setRGB(d.tint[0], d.tint[1], d.tint[2]); } });
   const obj = new THREE.Group(); obj.add(root);
   obj.position.set(x, d.fly || 0, z); world.add(obj);
   const shadow = new THREE.Mesh(blobGeo, blobMat); shadow.rotation.x = -Math.PI / 2; shadow.scale.setScalar(d.sc * .55); shadow.position.set(x, .02, z); world.add(shadow);
   const find = n => n && P.clips.find(c => c.name.split('|').pop() === n);
   const clips = { walk: find(d.walk), atk: find(d.atk), hit: find(d.hit), death: find(d.death) };
-  const m = { kind, boss: false, d, obj, shadow, padY: 0, A: null, mx: new THREE.AnimationMixer(root), clips, clipNow: null, cur: null, loop: false, at: 0, done: false, face: 1,
-    hp: 1, hpMax: 1, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
+  const hpMax = boss ? Math.round(d.hp * diffMul() * (1 + (G.day - 5) * .18)) : 1;
+  const m = { kind, boss, d, obj, shadow, padY: 0, A: null, mx: new THREE.AnimationMixer(root), clips, clipNow: null, cur: null, loop: false, at: 0, done: false, face: 1,
+    hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
     fly: d.fly || 0, ph: rnd(0, 6), kx: 0, kz: 0, flash: 0, touchCd: 0, ringCd: 2.4, texs: [] };
   setAnim(m, 'move', true);
   return m;
@@ -2401,9 +2405,16 @@ function closeDialog() { mode = 'FIELD'; $('dialog').style.display = 'none'; }
 const THEME_TEX = { snow: 'assets/maps/snow-ground.jpg', sand: 'assets/maps/sand-ground.jpg', lava: 'assets/maps/lava-ground.jpg' };
 const themeCache = {};
 function setGroundTheme(name) {
-  const g = window.groundMesh, url = THEME_TEX[name]; if (!g || !url) return;
-  const tex = themeCache[name] || (themeCache[name] = new THREE.TextureLoader().load(url, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(34, 34); }));
+  const g = window.groundMesh; if (!g) return;
+  if (!g.userData.homeMap) g.userData.homeMap = g.material.map;   // 처음 바닥(마을 잔디)을 기억해요
+  if (!name || !THEME_TEX[name]) { g.material.map = g.userData.homeMap; g.material.needsUpdate = true; return; }
+  const tex = themeCache[name] || (themeCache[name] = new THREE.TextureLoader().load(THEME_TEX[name], t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(34, 34); }));
   g.material.map = tex; g.material.needsUpdate = true;
+}
+// 10일차부터 설원 스테이지: 눈 바닥, 보스는 눈 늑대왕 (9일차 이하는 마을)
+function applyStageTheme() {
+  if (G.day >= 10) { setGroundTheme('snow'); if (G.day === 10) toast('❄ 설원 스테이지 시작! 눈 늑대왕이 나타나요'); }
+  else setGroundTheme(null);
 }
 function nightF(c) { return sstep(DAY_LEN - 4, DAY_LEN + 6, c) * (1 - sstep(CYCLE - 8, CYCLE, c)); }
 function sunTheta(c) { return c < DAY_LEN ? (c / DAY_LEN) * Math.PI : Math.PI + ((c - DAY_LEN) / NIGHT_LEN) * Math.PI; }
@@ -2433,7 +2444,7 @@ function stageBanner(title, sub) {   // 크게 "클리어!" 문구를 띄워요
 function dawn() {
   mons.forEach(m => { if (!m.dead) { m.state = 'flee'; } });
   bossRef = null; $('bossBar').style.display = 'none';
-  G.day += 1; mapExpand();
+  G.day += 1; mapExpand(); applyStageTheme();
   stageBanner(`☀ ${G.day - 1}일차 클리어!`, `${G.day}일차 아침이 밝았어요`);
   screenFlash('#ffe9a0', .45, .9); glowAt(px, 2.5, pz, 9, 0xffe9a0, 1.2); hitStop(.1);
   weather = 'clear';
@@ -2486,7 +2497,7 @@ function updateCycle(dt) {
     spawnT -= dt;
     if (spawnT <= 0) {
       const boss = !G.endless && G.day % 5 === 0 && !bossSpawned && spawnQ === Math.min(40, 6 + G.day * 3);
-      if (boss) { bossSpawned = true; spawnMon(G.day % 10 === 5 ? 'skeleton_king' : 'mushroom_queen', true); spawnGiant('zombie_king'); }
+      if (boss) { bossSpawned = true; spawnMon(G.day >= 10 ? 'snow_wolf' : (G.day % 10 === 5 ? 'skeleton_king' : 'mushroom_queen'), true); if (G.day < 10) spawnGiant('zombie_king'); }
       else if (!G.endless && !midGiantDone && spawnQ === Math.floor(Math.min(40, 6 + G.day * 3) / 2)) { midGiantDone = true; const gn = Math.min(7, 1 + aptLvSum()); for (let gi = 0; gi < gn; gi++) spawnMidGiant(); }
       else spawnMon();
       spawnQ -= 1; spawnT = Math.max(.22, .6 - G.day * .03);
@@ -3611,7 +3622,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.12';
+const APP_VERSION = '2026.11.21.13';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
