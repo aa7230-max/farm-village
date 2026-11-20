@@ -31,8 +31,7 @@ const BUILD = {
   LAMP:  { wood: 1, stone: 1, name: '전등', hp: 10 },
   TRAP:  { wood: 2, stone: 2, name: '가시 덫', hp: 10 }
 };
-const MODEL3D = {}, BODY = {};   // 3D 적(늑대·드래곤) / 캐릭터 몸(고양이·돼지)
-const BODY_DEF = [{ id: 'cat', ic: '🐱', name: '고양이', need: 0 }, { id: 'pig', ic: '🐷', name: '돼지', need: 2 }];   // need: 해제 레벨
+const MODEL3D = {};   // 3D 동물 모델 (펫·적)
 const MON = {
   skeleton:   { unlock: 1, hp: 4, spd: 1.35, rng: 0, sc: 3.1, dmg: 7, xp: 1, w: 35 },
   goblin:     { unlock: 2, hp: 3, spd: 2.25, rng: 0, sc: 2.7, dmg: 5, xp: 1, w: 25 },
@@ -175,7 +174,7 @@ let bossRef = null;
 let auraT = 0;
 // ===== v7 신규 시스템 =====
 let weather = 'clear', rainObj = null, pet = null, villagers = [], comboCd = 0, waveT = 0;
-const PET_DEF = { wolf: { ic: '🐺', name: '늑대 새끼', cd: .9, dmg: 1.1, rng: 3.6 }, rabbit: { ic: '🐰', name: '토끼', cd: 1.3, dmg: .8, rng: 2.6 } };
+const PET_DEF = { cat: { ic: '🐱', model: 'cat', name: '고양이', cd: 1.0, dmg: 1.0, rng: 3.0 }, pig: { ic: '🐷', model: 'pig', name: '돼지', cd: 1.3, dmg: .9, rng: 2.6 } };
 const PROMO = {
   mage:    { a: { ic: '⚡', t: '뇌신 전직', d: '번개 체인이 4마리 더 튀고 모든 피해 +30%' }, b: { ic: '❄', t: '빙결 전직', d: '스킬에 맞은 적이 1.5초 동안 느려져요' } },
   archer:  { a: { ic: '🔥', t: '화염 전직', d: '화살이 불타 모든 피해 +30%' }, b: { ic: '🎯', t: '관통 전직', d: '화살비가 1.5배 많이 떨어져요' } },
@@ -195,8 +194,13 @@ function emojiSprite(e, scale) {
   sp.scale.setScalar(scale || 1.2); return sp;
 }
 // 동료 펫: 따라다니며 적을 공격하고 보석을 물어 옴
+function petObj(d) {   // 펫은 3D 동물 모델로 보여줘요 (모델이 없으면 이모지)
+  const P = d.model && MODEL3D[d.model];
+  if (!P) return emojiSprite(d.ic, 1.1);
+  const g = new THREE.Group(); const root = THREE.SkeletonUtils.clone(P.obj); root.scale.setScalar(1.05); g.add(root); return g;
+}
 function ensurePet() {
-  if (G && G.pet && !pet) { const d = PET_DEF[G.pet]; pet = { def: d, obj: emojiSprite(d.ic, 1.1), x: px, z: pz, cd: 0, ph: 0 }; scene.add(pet.obj); }
+  if (G && G.pet && !pet) { const d = PET_DEF[G.pet]; pet = { def: d, obj: petObj(d), x: px, z: pz, cd: 0, ph: 0 }; scene.add(pet.obj); }
   else if (pet && (!G || !G.pet)) { scene.remove(pet.obj); pet = null; }
 }
 function updPet(dt) {
@@ -336,24 +340,6 @@ function persistRun() {
 function loadRun() { try { return JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); } catch (e) { return null; } }
 function loadProfile() { try { Object.assign(profile, JSON.parse(localStorage.getItem(PROF_KEY) || '{}')); } catch (e) { } }
 function saveProfile() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profile)); } catch (e) { } }
-function bodyUnlocked(id) { const def = BODY_DEF.find(b => b.id === id); return !!def && (def.need === 0 || (profile.bodies || []).includes(id)); }
-function unlockBody(id, label) {
-  if (bodyUnlocked(id)) return;
-  profile.bodies = (profile.bodies || []).concat([id]); saveProfile(); toast(label + ' 해금! 로비에서 골라요');
-}
-function renderBodyPick() {   // 로비에서 캐릭터 몸(고양이·돼지) 고르기
-  const box = document.getElementById('bodyPick'); if (!box) return;
-  box.innerHTML = '';
-  for (const b of BODY_DEF) {
-    const ok = bodyUnlocked(b.id) && !!BODY[b.id];
-    const btn = document.createElement('button');
-    btn.className = 'cbtn' + ((profile.body || 'cat') === b.id && ok ? ' on' : '');
-    btn.innerHTML = `<span class="i">${ok ? b.ic : '🔒'}</span>${b.name}<small>${ok ? '선택 가능' : 'Lv ' + b.need + ' 달성하면 해제'}</small>`;
-    btn.disabled = !ok;
-    btn.onclick = () => { profile.body = b.id; saveProfile(); renderBodyPick(); };
-    box.appendChild(btn);
-  }
-}
 function loadSettings() { try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY) || '{}')); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { } }
 
@@ -463,16 +449,8 @@ function loadGLBUrl(url) {
   return fetch(url).then(r => { if (!r.ok) throw new Error(url + ' ' + r.status); return r.arrayBuffer(); })
     .then(buf => new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', res, rej)));
 }
-async function loadAnimalModels() {   // 구름 앱의 3D 동물: 돼지(몸), 늑대·드래곤(적)
-  const jobs = [
-    loadGLBUrl('assets/animals/pig.glb').then(g => {
-      const p = fitTo(g.scene, 1.15);
-      p.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
-      BODY.pig = p;
-    }),
-    loadGLBUrl('assets/animals/wolf.glb').then(g => { MODEL3D.wolf = { obj: fitTo(g.scene, 1), clips: g.animations }; }),
-    loadGLBUrl('assets/animals/dragon.glb').then(g => { MODEL3D.dragon = { obj: fitTo(g.scene, 1), clips: g.animations }; })
-  ];
+async function loadAnimalModels() {   // 구름 앱의 3D 동물: 고양이·돼지(펫), 늑대·드래곤(적)
+  const jobs = ['cat', 'pig', 'wolf', 'dragon'].map(k => loadGLBUrl('assets/animals/' + k + '.glb').then(g => { MODEL3D[k] = { obj: fitTo(g.scene, 1), clips: g.animations }; }));
   await Promise.all(jobs.map(p => p.catch(e => showErr('animal ' + (e.message || e)))));
 }
 async function loadModels() {
@@ -485,16 +463,9 @@ async function loadModels() {
   }
   try { const mj = loadFBX(window.HINYO_FBX); if (mj) mayorProto = fitTo(mj, 1.6); } catch (e) { showErr('mayor ' + e.message); }
   try { const an = loadFBX(window.ANTLERS_FBX); if (an) antlersProto = fitTo(an, .9); } catch (e) { showErr('antlers ' + e.message); }
-  // 구름 앱의 3D 고양이(Quaternius)를 캐릭터 몸으로 써요. 실패하면 예전 FBX 몸을 그대로 써요.
-  if (window.CAT_GLB) {
-    try {
-      const cat = await parseGLB(window.CAT_GLB);
-      creatureProto = fitTo(cat, 1.15); BODY.cat = creatureProto;
-      creatureProto.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
-    } catch (e) { showErr('cat ' + (e.message || e)); creatureProto = null; }
-  }
+
   try {
-    const obj = creatureProto ? null : loadFBX(window.PLAYER_FBX, 'assets/player_tex/');
+    const obj = loadFBX(window.PLAYER_FBX, 'assets/player_tex/');
     if (obj) {
       creatureProto = fitTo(obj, 1.15);
       creatureProto.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
@@ -754,8 +725,7 @@ function makePlayer() {
   if (player) scene.remove(player);
   player = new THREE.Group();
   playerModel = new THREE.Group();
-  const pr = BODY[profile.body || 'cat'] || creatureProto;
-  const body = (pr && THREE.SkeletonUtils) ? THREE.SkeletonUtils.clone(pr) : fallbackChar();
+  const body = (creatureProto && THREE.SkeletonUtils) ? THREE.SkeletonUtils.clone(creatureProto) : fallbackChar();
   playerModel.add(body);
   playerModel.add(gear(profile.cls));
   if (profile.cls === 'archer' && antlersProto) { const an = antlersProto.clone(); an.position.set(0, 1.3, 0); playerModel.add(an); }
@@ -2195,7 +2165,7 @@ function levelFx(lvl) {
 }
 function gainXp(v) {
   G.xp += v;
-  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); mapExpand(); if (G.lvl === 2) unlockBody('pig', '🐷 돼지'); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
+  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); mapExpand(); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
 }
 function levelChoices() {
   if (G.promoDue && !G.promo && PROMO[G.cls]) return { forced: true, list: [Object.assign({ kind: 'promo', key: 'a' }, PROMO[G.cls].a), Object.assign({ kind: 'promo', key: 'b' }, PROMO[G.cls].b)] };
@@ -2206,8 +2176,8 @@ function levelChoices() {
     pool.push({ kind: 'xskill', key: k, ic: XSKILLS[k].ic, t: lv ? XSKILLS[k].name + ' 강화 → Lv ' + (lv + 1) : '✨ ' + XSKILLS[k].name + ' 배우기', d: XSKILLS[k].d });
   }
   if (G.lvl >= 3 && !G.pet) {
-    pool.push({ kind: 'pet', key: 'wolf', ic: '🐺', t: '늑대 새끼 입양', d: '가까운 적을 물어뜯고 보석을 물어 와요' });
-    pool.push({ kind: 'pet', key: 'rabbit', ic: '🐰', t: '토끼 입양', d: '빠르게 적을 쳐서 보석을 모아요' });
+    pool.push({ kind: 'pet', key: 'cat', ic: '🐱', t: '고양이 입양', d: '가까이 있는 적을 할퀴고 보석을 물어 와요' });
+    pool.push({ kind: 'pet', key: 'pig', ic: '🐷', t: '돼지 입양', d: '튼튼하게 적을 받아치고 보석을 모아요' });
   }
   return { forced: false, list: pool };
 }
@@ -3465,7 +3435,7 @@ function tick(now) {
   if (netPending) enterWaiting();           // 초대 링크로 들어오면 대기 화면에서 방장이 들여보내기를 기다려요
   const hasRun = !!loadRun();
   $('bContinue').disabled = !hasRun;
-  document.querySelectorAll('#classPick .cbtn').forEach(x => x.classList.toggle('on', x.dataset.c === profile.cls)); renderBodyPick();
+  document.querySelectorAll('#classPick .cbtn').forEach(x => x.classList.toggle('on', x.dataset.c === profile.cls));
   last = performance.now();
   requestAnimationFrame(frame);
   if (!creatureProto) toast('기본 인형으로 표시해요.');
