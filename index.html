@@ -181,6 +181,7 @@ button{font-family:inherit;cursor:pointer}
 #intro .sk2{animation-duration:.9s,11s;animation-delay:0s,-4s;bottom:24%;transform:scale(.8);opacity:.85}
 #intro .hero{position:absolute;bottom:22%;left:18%;font-size:58px;animation:bob 1.2s ease-in-out infinite;filter:drop-shadow(0 6px 4px rgba(0,0,0,.35))}
 #intro .hero2{left:auto;right:16%;font-size:50px;animation-delay:-.6s}
+#intro .hero-img{height:170px;width:auto;left:50%;transform:translateX(-50%);bottom:20%;font-size:0}
 @keyframes bob{50%{transform:translateY(-8px)}}
 #intro .bolt{position:absolute;top:30%;left:50%;width:6px;height:44%;margin-left:-3px;background:linear-gradient(#fff,#9fe6ff);box-shadow:0 0 14px #9fe6ff,0 0 30px #7fd0ff;clip-path:polygon(40% 0,100% 30%,55% 40%,100% 70%,30% 60%,60% 100%,0 60%,45% 45%,0 25%);opacity:0;animation:strike 3.6s ease-out infinite}
 @keyframes strike{0%,70%{opacity:0}72%{opacity:1}74%{opacity:.2}76%{opacity:1}82%,100%{opacity:0}}
@@ -196,7 +197,7 @@ button{font-family:inherit;cursor:pointer}
   <div class="bolt"></div>
   <div class="title"><span class="a">구름이와 함께</span><span class="b">Farm Game</span><span class="c">마을을 지켜라 · 중력보석 나무를 지켜요</span></div>
   <div class="sk"></div><div class="sk sk2"></div>
-  <div class="hero">🧙</div><div class="hero hero2">🏹</div>
+  <div class="hero">🧙</div><div class="hero hero2">🏹</div><!-- 내 캐릭터 사진으로 바뀌어요 (아래 스크립트) -->
   <div class="hint">👆 화면을 쓸어올려 시작 · Swipe up</div>
   <button class="go" id="introGo">▶ 시작하기</button>
 </div>
@@ -389,6 +390,48 @@ button{font-family:inherit;cursor:pointer}
   intro.addEventListener('pointerdown', e => { if (e.target.closest('#introGo')) return; down = true; sx = e.clientX; sy = e.clientY; });
   window.addEventListener('pointerup', e => { if (!down) return; down = false; const dx = e.clientX - sx, dy = e.clientY - sy; if (dy < -50 || Math.abs(dx) > 60) open(); });
   document.getElementById('introGo').addEventListener('click', open);
+})();
+// 오프닝 표지 대표 그림: 내가 고른 직업·색의 실제 캐릭터를 그대로 찍어 넣어요 (모델이 준비될 때까지 기다려요)
+(function(){
+  const hero = document.querySelector('#intro .hero:not(.hero2)');
+  const hero2 = document.querySelector('#intro .hero2');
+  if (!hero) return;
+  let tries = 0;
+  const snap = () => {
+    if (typeof creatureProto === 'undefined' || !creatureProto || !THREE.SkeletonUtils || typeof gear !== 'function') {
+      if (++tries < 120) setTimeout(snap, 250);   // 최대 30초까지 기다려요
+      return;
+    }
+    let r = null;
+    try {
+      if (typeof loadProfile === 'function') loadProfile();
+      const W = 256, H = 320;
+      r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      r.setSize(W, H); r.setPixelRatio(1);
+      const sc = new THREE.Scene();
+      sc.add(new THREE.AmbientLight(0xffffff, .9));
+      const dl = new THREE.DirectionalLight(0xffffff, .7); dl.position.set(2, 4, 3); sc.add(dl);
+      const g = new THREE.Group();
+      g.add(THREE.SkeletonUtils.clone(creatureProto));
+      g.add(gear((profile && profile.cls) || 'mage'));
+      const col = PAL_COL[((profile && profile.color) | 0) % PAL_COL.length];
+      tintObj(g, col); paintHat(g, col);
+      sc.add(g);
+      const cam = new THREE.PerspectiveCamera(30, W / H, .1, 50);
+      cam.position.set(0, 1.0, 5.2); cam.lookAt(0, .9, 0);
+      r.render(sc, cam);
+      const img = new Image();
+      img.className = 'hero hero-img'; img.alt = '내 캐릭터';
+      img.src = r.domElement.toDataURL('image/png');
+      hero.replaceWith(img);
+      if (hero2) hero2.remove();
+    } catch (e) {
+      /* 실패하면 기본 이모지를 그대로 둬요 */
+    } finally {
+      if (r) { r.dispose(); r.forceContextLoss && r.forceContextLoss(); }
+    }
+  };
+  snap();
 })();
 </script>
 </body>
