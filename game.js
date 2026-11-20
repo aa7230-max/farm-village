@@ -1297,7 +1297,7 @@ function updMon(m, dt) {
   const tn = m.d.tint || [1.14, 1.08, 1.08]; o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
   // 넉백 감쇠
   if (Math.abs(m.kx) + Math.abs(m.kz) > .001) { o.position.x += m.kx * dt * 4; o.position.z += m.kz * dt * 4; m.kx *= Math.pow(.02, dt); m.kz *= Math.pow(.02, dt); }
-  o.position.y = m.fly ? m.fly : .09; m.shadow.position.set(o.position.x, .02, o.position.z);   // 날개 있는 몬스터만 떠 있어요
+  o.center.set(.5, 0); o.position.y = m.fly ? m.fly : .09; m.shadow.position.set(o.position.x, .02, o.position.z);   // 발이 땅에 붙도록 기준점을 아래로   // 날개 있는 몬스터만 떠 있어요
   if (m.dead) { stepAnim(m, dt); if (m.done) removeMon(m); return; }
   const x = o.position.x, z = o.position.z;
   m.ph += dt;
@@ -1559,11 +1559,36 @@ function screenToGround(cx, cy) {   // 화면 좌표 → 땅 위의 점
   const hp = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hp) ? { x: hp.x, z: hp.z } : null;
 }
 function chargeStart(assist) { chargeOn = !modalOpen && mode === 'FIELD' && !buildMode; chargeAssist = !!assist; holdStart = performance.now(); aimOverride = null; chargeMoved = false; }
+function lineShot(dx, dz, held) {   // 직선 공격: 곧게 나가서 처음 맞는 적이 쓰러져요
+  const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+  const range = CLS[G.cls].rng * 1.8 + 4, pw = 1 + Math.min(held, 2) * 1.2;
+  let best = null, bt = 1e9;
+  for (const m of mons) {
+    if (m.dead || !m.obj) continue;
+    const vx = m.obj.position.x - px, vz = m.obj.position.z - pz, t = vx * dx + vz * dz;
+    if (t < 0 || t > range || t >= bt) continue;
+    if (Math.hypot(vx - dx * t, vz - dz * t) < .8) { bt = t; best = m; }
+  }
+  const endT = best ? bt : range, tp = { x: px + dx * endT, z: pz + dz * endT };
+  const mz = muzzle();
+  sendFx(0, mz, tp);
+  throwOrb(mz, new THREE.Vector3(tp.x, best ? 1.0 : .6, tp.z), held > 1 ? 1 : 0, () => {
+    if (best && !best.dead) hitEnemy(best, best.boss ? baseHit(best) * pw : 9999, { kb: .6 });
+    breakNodesAt(tp.x, tp.z, 1.1);
+    scorchAt(tp.x, tp.z, .35);
+    puff(tp.x, tp.z, 4, 0x3a2a1a);
+  }, G.cls, true);
+}
 function chargeRelease(assist) {
   if (!chargeOn) return;
   const held = (performance.now() - holdStart) / 1000; chargeOn = false; chargePid = null;
   if (mode !== 'FIELD' || modalOpen || buildMode) { aimOverride = null; return; }
   if (sniper) { fireSniper(); return; }
+  if (chargeEl && chargeEl.id === 'bPadAtk') {   // 왼쪽 버튼: 조준한 방향으로 곧게 쏴요
+    let dx, dz;
+    if (aimOverride) { dx = aimOverride.x - px; dz = aimOverride.z - pz; } else { const f = camFwd(); dx = f.x; dz = f.z; }
+    lineShot(dx, dz, held); aimOverride = null; chargeEl = null; return;
+  }
   if (aimOverride) { const lv = Math.min(Math.max(held, .3), 2.5); chargedZap(lv); aimOverride = null; return; }   // 드래그한 자리에 떨어뜨려요
   if (assist || chargeAssist) assistAim();
   if (held < .35) { attackNow(true); atkCd = Math.max(atkCd, .2 / rateMul() / CLS[G.cls].rate); return; }   // 짧게 누르면 일반 공격
@@ -2235,7 +2260,7 @@ function setupInput() {
     e.preventDefault();
     el.classList.add('kpress'); setTimeout(() => el.classList.remove('kpress'), 140);
     flashKey(e.code.replace('Key', ''), (el.title || '').replace(/\s*\(.*\)$/, ''));
-    if (id === 'bHit') { if (!e.repeat) chargeStart(false); return; }
+    if (id === 'bHit') { if (!e.repeat) { chargeEl = $('bHit'); chargeStart(false); } return; }
     el.click();
   });
   { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
@@ -2304,7 +2329,7 @@ app.addEventListener('pointerdown', e => {
     el.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); pointerFired = true; chargePid = e.pointerId; chargeEl = el; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist); });
     const rel = () => { chargeRelease(assist); setTimeout(() => { pointerFired = false; }, 60); };
     el.addEventListener('pointerup', rel); el.addEventListener('pointercancel', rel);
-    el.onclick = () => { if (pointerFired) { pointerFired = false; return; } chargeStart(assist); chargeRelease(assist); };
+    el.onclick = () => { if (pointerFired) { pointerFired = false; return; } chargeEl = el; chargeStart(assist); chargeRelease(assist); };
   };
   wireAttack('bHit', false); wireAttack('bPadAtk', true);
   // 채팅 입력 · 빠른 말풍선 · 음성 입력
@@ -2910,9 +2935,33 @@ let hitMoved = false;
 function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어 다녀요 (옮기기 전까지)
   return;
 }
-function setupHitGrip() {   // 공격 버튼은 제자리에 있어요 (끌면 조준 방향이 바뀌어요)
+let mvDrag = null;
+function btnPlace(el, l, t) { el.style.position = 'fixed'; el.style.left = l + 'px'; el.style.top = t + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.zIndex = 6; }
+function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   const g = document.getElementById('hitGrip'); if (g) g.remove();
-  const hb = $('bHit'); if (hb) { hb.style.position = ''; hb.style.left = ''; hb.style.top = ''; hb.style.zIndex = ''; }
+  ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
+    el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    el.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = el.getBoundingClientRect(); mvDrag = { el, id, pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false, t0: performance.now() }; });
+  });
+  window.addEventListener('pointermove', e => {
+    const d = mvDrag; if (!d || e.pointerId !== d.pid || d.moved) return;
+    const L = Math.hypot(e.clientX - d.sx, e.clientY - d.sy); if (L < 12) return;
+    const attack = d.id === 'bHit' || d.id === 'bPadAtk';
+    if (attack && (aimOverride || performance.now() - d.t0 < 500)) return;   // 공격 버튼: 바로 끌면 조준, 오래 누르고 끌면 옮기기
+    d.moved = true; chargeOn = false; aimOverride = null;
+  });
+  window.addEventListener('pointermove', e => {
+    const d = mvDrag; if (!d || e.pointerId !== d.pid || !d.moved) return;
+    btnPlace(d.el, clamp(e.clientX - d.ox, 0, innerWidth - 70), clamp(e.clientY - d.oy, 0, innerHeight - 70));
+  });
+  const end = e => {
+    const d = mvDrag; if (!d || e.pointerId !== d.pid) return;
+    if (d.moved) { d.el._supp = true; try { localStorage.setItem('farm-btnpos-' + d.id, JSON.stringify({ l: parseInt(d.el.style.left, 10) || 0, t: parseInt(d.el.style.top, 10) || 0 })); } catch (x) {} }
+    mvDrag = null;
+  };
+  window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
 }
 function setupActGrip() {
   const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
