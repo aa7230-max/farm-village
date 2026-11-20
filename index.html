@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2c4a33">
+<title>팜게임 v8 — 마을을 지켜라</title>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="vendor/fflate.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/FBXLoader.js"></script>
+<script src="vendor/SkeletonUtils.js"></script>
+<script src="assets/models/player.js"></script>
+<script src="assets/models/hinyoningyo.js"></script>
+<script src="assets/models/antlers.js"></script>
+<script src="assets/models/village.js"></script>
+<style>
+:root{
+  --ink:#4a3424;--paper:#fff8ea;--paper2:#fff1d4;--line:#ecd3a2;
+  --leaf:#6bb35a;--leaf2:#4f9243;--sky:#8fd0ee;--gold:#f2b84b;--gold2:#d9921f;
+  --rose:#ef8a9e;--night:#0b1433;--ui:.92;
+  --shadow:0 6px 0 rgba(120,80,30,.35),0 12px 22px rgba(60,40,20,.22);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;touch-action:none}
+html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,'Apple SD Gothic Neo','Pretendard','Malgun Gothic',sans-serif;background:var(--sky);color:var(--ink)}
+#app{position:fixed;inset:0;overflow:hidden}
+canvas#c{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer}
+.chip{background:rgba(255,250,238,.94);border:2px solid var(--line);border-radius:14px;padding:6px 10px;font-weight:800;font-size:12px;box-shadow:0 3px 8px rgba(60,40,20,.16);opacity:var(--ui)}
+.btn{border:0;border-radius:16px;padding:11px 14px;background:var(--paper);color:var(--ink);font-weight:900;font-size:14px;box-shadow:0 4px 0 var(--line),0 8px 14px rgba(60,40,20,.14);transition:transform .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--line)}
+.btn.primary{background:linear-gradient(#ffe08a,var(--gold));color:#4a2c00;box-shadow:0 4px 0 var(--gold2),0 8px 14px rgba(120,70,0,.25)}
+.btn.leaf{background:linear-gradient(#b8ef9c,var(--leaf));color:#1f3d16;box-shadow:0 4px 0 var(--leaf2),0 8px 14px rgba(40,90,30,.25)}
+.btn.ghost{background:transparent;box-shadow:none;border:2px solid rgba(255,255,255,.7);color:#fff}
+.btn:disabled{opacity:.45}
+
+/* ---------- 로그인 · 시작 화면 ---------- */
+#login{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:18px;
+  background:radial-gradient(120% 80% at 50% 0%,#bff0ff 0%,#8fd0ee 40%,#5aa86a 100%)}
+#login .sheet{width:min(420px,100%);background:var(--paper);border-radius:28px;padding:22px 20px 20px;box-shadow:0 10px 0 rgba(90,60,20,.35),0 24px 40px rgba(20,40,20,.35);text-align:center;position:relative}
+#login .logo{font-size:44px;line-height:1;margin:4px 0 2px;letter-spacing:-1px}
+#login .logo b{color:var(--leaf2)}
+#login .tag{font-size:13px;opacity:.85;margin-bottom:14px;line-height:1.5}
+#login label{display:block;text-align:left;font-size:12px;font-weight:800;margin:10px 0 4px}
+#login input[type=text]{width:100%;font:inherit;font-size:16px;padding:12px 14px;border-radius:14px;border:2px solid var(--line);background:#fffdf6;color:var(--ink);outline:none}
+#login input[type=text]:focus{border-color:var(--leaf)}
+.classes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.cbtn{border:2px solid var(--line);border-radius:18px;padding:10px 4px 8px;background:#fffdf6;font-weight:800;font-size:12px;color:var(--ink);transition:transform .15s,border-color .15s}
+.cbtn .i{font-size:30px;display:block;margin-bottom:2px}
+.cbtn small{display:block;font-weight:600;font-size:10.5px;opacity:.75;margin-top:3px;line-height:1.3}
+.swatches{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.sw{width:36px;height:36px;border-radius:50%;border:3px solid #fff;box-shadow:0 3px 0 var(--line);padding:0}
+.sw.on{outline:3px solid var(--leaf);outline-offset:2px}
+.cbtn.on{border-color:var(--leaf);background:#eaffd9;transform:translateY(-2px);box-shadow:0 4px 0 #9fd28b}
+.row{display:flex;gap:8px;margin-top:14px}
+.row .btn{flex:1}
+.story{font-size:12.5px;line-height:1.6;text-align:left;background:var(--paper2);border-radius:14px;padding:10px 12px;margin-top:12px;border:2px dashed var(--line)}
+.note{font-size:11px;opacity:.7;margin-top:10px}
+
+/* ---------- HUD ---------- */
+#hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;z-index:6;pointer-events:none}
+#hud .col{display:flex;flex-direction:column;gap:6px;max-width:72%}
+#hud .chip{pointer-events:none}
+#hud.collapsed #hudBody{display:none}
+.bar{height:9px;border-radius:9px;background:rgba(0,0,0,.18);overflow:hidden;margin-top:5px;width:170px}
+.bar>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff8d8d,#8fe07a);transition:width .18s}
+.bar.xp{height:6px;width:100%;max-width:280px}
+.bar.xp>i{background:linear-gradient(90deg,#9fd8ff,#c58bff)}
+#topR{display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:auto}
+#topR .chip{pointer-events:auto!important}
+#topR.folded #topMore{display:none}
+#topR:not(.folded) #topMore{display:flex}
+#hud.collapsed #chatBox{display:none!important}
+#palHead{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;font-weight:800;color:#8a5a2a;padding:0 6px;touch-action:none;user-select:none;cursor:move}
+#palOp{width:72px;margin:0}
+@media (orientation: landscape) and (max-height: 560px){
+  .rb{width:60px;height:60px;font-size:10px;border-width:2px}
+  #actions{right:8px;bottom:8px;grid-template-columns:repeat(2,60px);gap:8px}
+  #pad{width:120px;height:120px;left:10px;bottom:10px}
+  #knob{width:46px;height:46px;left:35px;top:35px}
+  #palette{top:52px;bottom:auto;left:50%;transform:translateX(-50%);right:auto;max-width:54vw}
+  #dialog{left:8%;right:8%;bottom:8px;padding:10px 12px}
+  #hud{top:6px;left:6px;right:6px}
+  #topR .chip{font-size:11px}
+  #bossBar{top:44px}
+}
+#skillCol{display:flex;flex-direction:column;align-items:center;gap:6px}
+#xSkills{display:flex;flex-direction:column;align-items:center;gap:4px}
+.xs{height:28px;padding:0 10px;border-radius:14px;border:2px solid #fff;background:#fff6e0;box-shadow:0 2px 0 #e0b56a;font-size:11px;font-weight:900;color:var(--ink);white-space:nowrap}
+#topMore .rb{width:auto;height:34px;border-radius:17px;flex-direction:row;padding:0 12px;font-size:12px;border-width:2px;box-shadow:0 2px 0 #e0b56a;white-space:nowrap;overflow:visible}
+#pause{width:44px;height:44px;border-radius:14px;font-size:20px;padding:0}
+#bossBar{position:absolute;top:70px;left:50%;transform:translateX(-50%);width:min(340px,70%);z-index:6;text-align:center;display:none}
+#bossBar .name{font-weight:900;font-size:12px;text-shadow:0 1px 0 #fff}
+#bossBar .bar{width:100%;height:12px;background:rgba(0,0,0,.35)}
+#bossBar .bar>i{background:linear-gradient(90deg,#c46bff,#ff5a6e)}
+#toast{position:absolute;top:120px;left:50%;transform:translateX(-50%);max-width:88%;text-align:center;display:none;z-index:9;white-space:pre-line;pointer-events:none;animation:pop .25s ease-out}
+@keyframes pop{from{opacity:0;transform:translate(-50%,-6px) scale(.96)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+
+/* ---------- 1인칭 몰입 ---------- */
+#vig{position:absolute;inset:0;pointer-events:none;opacity:0;z-index:4;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 52%,rgba(20,8,0,.6) 100%);transition:opacity .3s}
+#xhair{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border:2px solid rgba(255,255,255,.95);border-radius:50%;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);pointer-events:none;opacity:0;z-index:4;transition:border-color .08s,transform .08s}
+#xhair.lock{border-color:#ff2a2a;transform:scale(1.25);box-shadow:0 0 0 1.5px rgba(0,0,0,.35),0 0 10px rgba(255,40,40,.8)}
+#xhair::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px 0 0 -1.5px;border-radius:50%;background:#fff}
+#xhair.lock::after{background:#ff2a2a}
+
+/* ---------- 조이스틱 · 버튼 ---------- */
+#pad{position:absolute;left:16px;bottom:76px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.28);border:3px solid rgba(255,255,255,.85);z-index:5}
+#knob{position:absolute;width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff9d6,#f6c46b);border:3px solid #e0a040;left:43px;top:43px;box-shadow:0 3px 8px rgba(0,0,0,.2);transition:transform .03s linear}
+#actions{position:absolute;right:14px;bottom:76px;display:grid;grid-template-columns:repeat(2,74px);gap:12px;justify-items:center;z-index:5}
+.rb{width:74px;height:74px;border-radius:50%;border:3px solid #fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:var(--ink);background:radial-gradient(circle at 35% 28%,#fff,#fff1cc 70%);box-shadow:0 5px 0 #e0b56a,0 8px 14px rgba(90,60,25,.25);position:relative;overflow:hidden}
+.rb:active{transform:translateY(3px);box-shadow:0 2px 0 #e0b56a}
+.rb .cd{position:absolute;inset:0;background:conic-gradient(rgba(60,40,20,.42) var(--p,0%),transparent 0);border-radius:50%;pointer-events:none}
+.rb.skill{background:radial-gradient(circle at 35% 28%,#fff8f2,#ffd6b8 70%);box-shadow:0 5px 0 #d98a6b,0 8px 14px rgba(120,50,30,.25)}
+.rb.hit{background:radial-gradient(circle at 35% 28%,#f5fbff,#bfe2fb 70%);box-shadow:0 5px 0 #7fb2d9,0 8px 14px rgba(40,80,120,.25)}
+.rb.gold{background:radial-gradient(circle at 35% 28%,#fffbe8,#ffe392 70%);box-shadow:0 5px 0 #d9a93a,0 8px 14px rgba(120,80,10,.25)}
+.rb.pink{background:radial-gradient(circle at 35% 28%,#fff7fb,#f8c9dc 70%);box-shadow:0 5px 0 #d98aa6,0 8px 14px rgba(120,40,70,.25)}
+.rb.on{background:radial-gradient(circle at 35% 28%,#f4ffe9,#c9efb1 70%);box-shadow:0 5px 0 #7fb866}
+.hide-btn{display:none!important}
+
+#palette{position:absolute;left:10px;right:10px;bottom:200px;display:none;justify-content:flex-start;align-items:center;overflow-x:auto;gap:6px;padding:8px;background:rgba(255,250,238,.97);border:2px solid #f2b98a;border-radius:20px;z-index:6}
+.pi{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;font-size:11px;font-weight:800;padding:6px 8px;border-radius:14px;border:2px solid transparent;cursor:pointer}
+.pi.on{background:#ffe6c2;border-color:#e89f4f}
+.pi .e{font-size:22px}
+
+/* ---------- 대화 · 모달 ---------- */
+#dialog{position:absolute;left:12px;right:12px;bottom:20px;background:#fffdf7;border:3px solid #9fd3c7;border-radius:22px;padding:14px 16px;display:none;z-index:12;box-shadow:0 8px 20px rgba(0,0,0,.2)}
+#dialog .tag{display:inline-block;background:#6fbdb0;color:#fff;border-radius:11px;padding:3px 10px;font-size:12px;font-weight:800}
+#line{font-size:15px;font-weight:700;line-height:1.55;min-height:44px;margin:8px 0}
+.modal{position:absolute;inset:0;background:rgba(30,20,10,.5);display:none;align-items:center;justify-content:center;z-index:14;padding:16px;backdrop-filter:blur(2px)}
+.modal.show{display:flex}
+.card{background:var(--paper);border-radius:24px;padding:18px;max-width:380px;width:100%;border:3px solid var(--line);font-size:13px;line-height:1.5;box-shadow:0 10px 0 rgba(90,60,20,.3)}
+.card h3{margin:0 0 6px;font-size:18px}
+.opts{display:flex;flex-direction:column;gap:9px;margin-top:10px}
+.opt{display:flex;gap:10px;align-items:center;text-align:left;border:2px solid var(--line);border-radius:16px;padding:10px 12px;background:#fffdf6;font-weight:700;font-size:13px;color:var(--ink);transition:transform .1s}
+.opt:active{transform:scale(.98)}
+.opt .ic{font-size:26px;width:34px;text-align:center}
+.opt small{display:block;font-weight:600;opacity:.75;font-size:11.5px;margin-top:2px}
+.opt .tagN{margin-left:auto;font-size:10px;background:#ffe6c2;border-radius:8px;padding:2px 6px;font-weight:900;white-space:nowrap}
+.opt.rare{border-color:#c58bff;background:linear-gradient(#fbf4ff,#f1e2ff)}
+.opt.epic{border-color:#ffb347;background:linear-gradient(#fff7e6,#ffe3b0)}
+#lvlCard h3 span{color:var(--gold2)}
+.center{text-align:center}
+#pauseCard .row{flex-wrap:wrap}
+#overCard .stat{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0;font-weight:800}
+#overCard .stat div{background:#fffdf6;border:2px solid var(--line);border-radius:12px;padding:8px}
+.relics{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;font-size:16px}
+.relics span{background:#fffdf6;border:2px solid var(--line);border-radius:10px;padding:2px 5px}
+#lobbyModal{z-index:35}
+#lobbyModal .story{text-align:left;margin:8px 0;min-height:40px;font-size:14px}
+#cdOverlay{position:absolute;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(20,40,20,.42);color:#fff;font-weight:900;text-shadow:0 3px 12px rgba(0,0,0,.45);pointer-events:none}
+#cdNum{font-size:140px;line-height:1}
+#cdText{font-size:20px;margin-top:6px}
+#load{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:linear-gradient(#bff0ff,#5aa86a);z-index:40;font-weight:900;font-size:15px}
+#load .spin{width:38px;height:38px;border-radius:50%;border:5px solid rgba(255,255,255,.5);border-top-color:#fff;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#err{position:absolute;left:8px;right:8px;top:260px;z-index:50;background:#fff;color:#b00020;padding:8px;font:11px monospace;word-break:break-all;border:2px solid #b00020;border-radius:8px;max-height:35%;overflow:auto;display:none}
+.cdx-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cdx{background:#fffdf6;border:2px solid var(--line);border-radius:12px;padding:6px;font-size:12px}.cdx small{display:block;opacity:.7}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="c"></canvas>
+  <div id="vig"></div><div id="xhair"></div>
+
+  <!-- 로그인 · 시작 -->
+  <section id="login">
+    <div class="sheet">
+      <div class="logo">🌿 <b>팜</b>게임</div>
+      <div class="tag">구름이와 마을 사람들이 밤마다 찾아오는 적을 막아 냅니다.<br>스테이지마다 강해지고, 5일마다 보스가 옵니다.</div>
+      <div id="joinBanner" class="story" style="display:none"></div>
+      <label for="nick">로그인 아이디 (필수)</label>
+      <input id="nick" type="text" maxlength="10" placeholder="친구에게 보일 이름, 예: 구름이" autocomplete="off">
+      <label>직업 고르기</label>
+      <div class="classes" id="classPick">
+        <button class="cbtn on" data-c="mage"><span class="i">🧙</span>마법사<small>⚡ 번개 체인</small></button>
+        <button class="cbtn" data-c="archer"><span class="i">🏹</span>궁수<small>🏹 화살비</small></button>
+        <button class="cbtn" data-c="warrior"><span class="i">⚔</span>전사<small>🌀 회전 베기</small></button>
+      </div>
+      <label>내 캐릭터 색 (친구와 구분)</label>
+      <div class="swatches" id="colorPick"><button class="sw on" data-k="0" style="background:#ffd34d"></button><button class="sw" data-k="1" style="background:#ff8fb8"></button><button class="sw" data-k="2" style="background:#7fd0ff"></button><button class="sw" data-k="3" style="background:#8fe08a"></button><button class="sw" data-k="4" style="background:#b99cff"></button><button class="sw" data-k="5" style="background:#ff9f5a"></button></div>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:800;font-size:13px;margin-top:10px"><input type="checkbox" id="endless"> ♾ 무한 밤 모드 <span id="endNote" style="opacity:.7;font-weight:600;font-size:11px"></span></label>
+      <div class="story" id="storyLine">촌장님이 말했어요. "보석을 지키는 것이 우리 마을을 지키는 일이야."</div>
+      <div class="row">
+        <button class="btn leaf" id="bStart">모험 시작</button>
+        <button class="btn" id="bContinue">이어하기</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="bNew">🆕 새로 시작</button>
+        <button class="btn leaf" id="bCoop">👥 함께하기</button>
+      </div>
+      <div class="row" style="align-items:center">
+        <input id="joinCode" inputmode="numeric" maxlength="6" placeholder="초대 코드 6자리 (예: 123412)" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:14px;border:2px solid var(--line);font-weight:800;text-transform:uppercase">
+        <button class="btn" id="bJoin">🔗 참가</button>
+      </div>
+      <div class="note">👥 함께하기를 누르면 초대 링크가 복사돼요. 같은 링크로 들어온 친구와 한 마을을 지킬 수 있어요(최대 4명). 저장은 이 기기에 돼요.</div>
+    </div>
+  </section>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden collapsed">
+    <div class="col">
+      <button class="chip" id="hudTog" style="pointer-events:auto;align-self:flex-start">📋</button>
+      <div id="chatBox" class="chip" style="display:none;flex-direction:column;align-items:stretch;gap:4px;width:210px;padding:5px 8px;pointer-events:auto">
+        <button class="chip" id="chatTog" style="pointer-events:auto;padding:2px 8px;font-size:12px;align-self:flex-start">💬 채팅 ▾</button>
+        <div id="chatBody" style="display:none;flex-direction:column;gap:4px">
+        <div id="chatLog" style="font-size:11px;max-height:88px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;line-height:1.3;pointer-events:none"></div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <button class="chip" id="bVoice" style="pointer-events:auto;padding:2px 7px;font-size:12px">🎤</button>
+          <input id="chatIn" maxlength="40" placeholder="메시지" autocomplete="off" style="flex:1;min-width:0;font-size:12px;padding:4px 6px;border-radius:10px;border:1px solid var(--line);pointer-events:auto">
+          <button class="chip" id="bChatSend" style="pointer-events:auto;padding:2px 7px;font-size:12px">↵</button>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap"><button class="chip qk" data-q="👍" style="pointer-events:auto;padding:2px 7px;font-size:12px">👍</button><button class="chip qk" data-q="도와줘!" style="pointer-events:auto;padding:2px 7px;font-size:12px">도와줘!</button><button class="chip qk" data-q="여기!" style="pointer-events:auto;padding:2px 7px;font-size:12px">여기!</button><button class="chip qk" data-q="조심!" style="pointer-events:auto;padding:2px 7px;font-size:12px">조심!</button></div>
+        </div>
+      </div>
+      <div id="hudBody" style="display:flex;flex-direction:column;gap:6px">
+      <div class="chip" id="dayChip">1일차 · ☀ 낮</div>
+      <div class="chip" id="recChip" style="display:none;font-size:11px;max-width:260px"></div>
+      <div class="chip">
+        <span id="resTxt">🪵 0 🪨 0 🌿 0 💎 0</span>
+        <div class="bar"><i id="hpFill"></i></div>
+        <div style="font-size:11px;margin-top:2px">❤ <span id="hpTxt">100</span> · <span id="clsLbl"></span> · Lv <span id="lvLbl">1</span></div>
+      </div>
+      <div class="chip" style="padding:5px 8px"><div class="bar xp"><i id="xpFill"></i></div></div>
+      </div>
+    </div>
+    <div id="topR" class="folded">
+      <div style="display:flex;gap:6px;pointer-events:auto">
+        <button class="chip" id="pause" style="pointer-events:auto">⏸</button>
+        <button class="chip" id="topTog" style="pointer-events:auto">☰</button>
+      </div>
+      <button class="chip" id="waitChip" style="display:none;font-size:12px;pointer-events:auto;background:#ffe9a8;font-weight:900">⏳ 0 입장</button>
+      <div id="topMore" style="flex-direction:column;align-items:flex-end;gap:6px">
+        <button class="chip" id="bRunLock" style="pointer-events:auto">🏃 고정 끔</button>
+        <button class="chip" id="bFp" style="pointer-events:auto">👁 3인칭</button>
+        <button class="chip" id="bXh" style="pointer-events:auto">🎯 조준점 켬</button>
+        <button class="rb on" id="bBuild">🔨 건설</button>
+        <button class="rb gold hide-btn" id="bGather">🪓 벌목</button>
+        <button class="rb pink hide-btn" id="bTalk">💬 대화</button>
+        <button class="rb gold hide-btn" id="bUp">⬆ 강화</button>
+        <button class="chip" id="bCodex" style="display:none!important">📖</button>
+        <div class="chip" id="friendChip" style="display:none;font-size:11px;pointer-events:auto"></div>
+        <div class="chip" id="relicChip" style="font-size:11px;max-width:150px;display:none"></div>
+      </div>
+    </div>
+  </div>
+  <div id="bossBar"><div class="name" id="bossName"></div><div class="bar"><i id="bossFill"></i></div></div>
+  <div id="toast" class="chip hidden"></div>
+
+  <!-- 조작 -->
+  <div id="pad" class="hidden"><div id="knob"></div></div>
+  <button id="bPadAtk" class="hidden" title="공격 (A)" style="position:absolute;left:62px;bottom:184px;width:52px;height:52px;border-radius:50%;font-size:22px;z-index:5;border:3px solid #fff;background:radial-gradient(circle at 35% 28%,#fff8f2,#ffd6b8 70%);box-shadow:0 4px 0 #d98a6b;padding:0">⚔</button>
+  <div id="actions" class="hidden">
+    <div id="skillCol"><button class="rb skill" id="bSkill"><span class="cd" id="skillCd"></span><span id="skillTxt" style="white-space:nowrap">⚡ 낙뢰</span></button><div id="xSkills"></div></div>
+    <button class="rb hit" id="bHit">⚔ 공격</button>
+    <button class="rb" id="bRun">🏃 달리기</button>
+  </div>
+  <div id="palette">
+    <div id="palHead"><span id="palGrip">⠿ 건설 · 끌어서 이동</span><input type="range" id="palOp" min="30" max="100" value="100" title="메뉴 투명도"></div>
+    <div class="pi on" data-t="HOUSE"><span class="e">🏠</span>집 🪵5 🪨3</div>
+    <div class="pi" data-t="TOWER"><span class="e">🏹</span>망루 🪵6 🪨5</div>
+    <div class="pi" data-t="APT"><span class="e">🏢</span>아파트 🪵8 🪨6</div>
+    <div class="pi" data-t="MINE"><span class="e">💎</span>광산 🪵4 🪨4</div>
+    <div class="pi" data-t="WALL"><span class="e">🧱</span>성벽 🪵1 🪨2</div>
+    <div class="pi" data-t="LAMP"><span class="e">💡</span>전등 🪵1 🪨1</div>
+    <div class="pi" data-t="TRAP"><span class="e">🪤</span>가시덫 🪵2 🪨2</div>
+    <div class="pi" data-t="REMOVE"><span class="e">🧹</span>철거</div>
+  </div>
+
+  <!-- 대화 -->
+  <div id="dialog"><span class="tag">촌장님</span><div id="line"></div><div style="text-align:right"><button class="btn" id="bNext">다음 ▶</button></div></div>
+
+  <!-- 레벨업 -->
+  <div class="modal" id="lvlModal"><div class="card" id="lvlCard">
+    <h3>⭐ 레벨 <span id="lvlNew">2</span>!</h3>
+    <div style="opacity:.8">하나를 골라 더 강해지세요.</div>
+    <div class="opts" id="lvlOpts"></div>
+  </div></div>
+
+  <!-- 스테이지 보상 (유물) -->
+  <div class="modal" id="relicModal"><div class="card">
+    <h3>🏆 <span id="relicDay">1</span>일차 클리어!</h3>
+    <div style="opacity:.8">마을의 보물 중 하나를 얻어요. 유물은 계속 쌓여요.</div>
+    <div class="opts" id="relicOpts"></div>
+  </div></div>
+
+  <!-- 도감 -->
+  <div class="modal" id="codexModal"><div class="card">
+    <h3>📖 도감</h3>
+    <div id="codexBody"></div>
+    <div class="row"><button class="btn primary" id="bCodexClose">닫기</button></div>
+  </div></div>
+
+  <!-- 일시정지 -->
+  <div class="modal" id="pauseModal"><div class="card" id="pauseCard">
+    <h3>⏸ 잠시 멈춤</h3>
+    <div class="stat-line" id="pauseStat" style="margin:6px 0"></div>
+    <div class="relics" id="pauseRelics"></div>
+    <div class="row">
+      <button class="btn primary" id="bResume">계속하기</button>
+      <button class="btn" id="bReset">처음부터</button>
+    </div>
+    <div class="row"><button class="btn leaf" id="bInvite">👥 친구 초대</button></div>
+    <div class="story" id="inviteBox" style="display:none"><div>초대 코드 <b id="inviteCode"></b></div><div id="inviteLink" style="word-break:break-all;font-size:11px;margin:6px 0"></div><div class="row"><button class="btn primary" id="bShare">📤 공유하기</button></div><div class="note">친구는 이 링크를 열거나, 시작 화면의 초대 코드 칸에 코드를 넣고 🔗 참가를 누르면 돼요.</div><div class="row"><button class="btn" id="bCopy">📋 링크 복사</button></div></div>
+    <div class="row"><button class="btn" id="bHome">🏠 홈 화면으로</button></div>
+    <div class="row"><button class="btn" id="bSound">🔊 소리 켬</button><button class="btn" id="bVib">📳 진동 켬</button></div>
+  </div></div>
+
+  <!-- 함께하기 대기실 -->
+  <div class="modal" id="lobbyModal"><div class="card" style="text-align:center">
+    <h3>👥 함께하기 대기실</h3>
+    <div>초대 코드 <b id="lobbyCode"></b></div>
+    <div id="lobbyLink" style="word-break:break-all;font-size:11px;margin:6px 0"></div>
+    <div class="row"><button class="btn leaf" id="bLobbyShare">📤 초대 보내기</button><button class="btn" id="bLobbyCopy">📋 링크 복사</button></div>
+    <div class="story" id="lobbyList"></div>
+    <div class="note" id="lobbyNote"></div>
+    <div class="row"><button class="btn primary" id="bLobbyStart">▶ 시작 (5초 뒤)</button><button class="btn" id="bLobbyHome">🏠 홈 화면으로</button></div>
+  </div></div>
+  <div id="cdOverlay"><div id="cdNum">5</div><div id="cdText">곧 함께 시작해요!</div></div>
+
+  <!-- 친구 대기 -->
+  <div class="modal" id="waitModal"><div class="card" style="text-align:center">
+    <div style="font-size:40px">⏳</div>
+    <h3>대기 중</h3>
+    <div style="opacity:.85">방장이 들여보내 주면 바로 함께 시작해요.</div>
+  </div></div>
+
+  <!-- 게임 오버 -->
+  <div class="modal" id="overModal"><div class="card" id="overCard" style="text-align:center">
+    <div style="font-size:40px">💔</div>
+    <h3 id="overTitle">보석을 모두 빼앗겼어요</h3>
+    <div class="stat" id="overStat"></div>
+    <div class="row"><button class="btn primary" id="bAgain">다시 도전</button><button class="btn" id="bMenu">메뉴로</button></div>
+  </div></div>
+
+  <div id="load"><div class="spin"></div>🌿 마을을 준비하는 중…</div>
+  <div id="err"></div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
