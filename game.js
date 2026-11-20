@@ -1398,6 +1398,16 @@ function updMon(m, dt) {
   if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12 - (m.padY || 0); else o.position.y = .09 - (m.padY || 0);   // 걷는 몬스터는 땅 위
   if (!Number.isFinite(o.position.y)) o.position.y = .09;   // 오류 방지
 }
+function deathBurst(x, y, z, col) {   // 적이 터지듯이 조각으로 흩어져요
+  glowAt(x, y + .6, z, m0Size(col), col, .3); puff(x, z, 8, col);
+  for (let i = 0; i < 12; i++) {
+    const sh = new THREE.Mesh(new THREE.BoxGeometry(.14, .14, .14), new THREE.MeshBasicMaterial({ color: i % 3 ? col : 0xffffff, transparent: true, depthWrite: false }));
+    sh.position.set(x, y + .8, z); scene.add(sh);
+    const a = rnd(0, Math.PI * 2), out = rnd(1.2, 2.8), up = rnd(1.5, 3.2), spin = rnd(4, 9);
+    tweenTo(0, 1, .55, v => { sh.position.set(x + Math.cos(a) * out * v, y + .8 + up * v - 3.2 * v * v, z + Math.sin(a) * out * v); sh.rotation.x += spin * .02; sh.rotation.y += spin * .02; sh.material.opacity = 1 - v * v; sh.scale.setScalar(1 - v * .6); }, 'out', i * .01, () => { scene.remove(sh); sh.geometry.dispose(); sh.material.dispose(); });
+  }
+}
+function m0Size(col) { return col === 0xffd0ff ? 3.2 : 2; }
 function hitEnemy(m, dmg, opt) {
   if (!m || m.dead) return;
   opt = opt || {};
@@ -1411,6 +1421,7 @@ function hitEnemy(m, dmg, opt) {
   if (m.hp > 0) { m.hitLock = .12; setAnim(m, 'hit', false); sfx('hit'); vib('hit'); hitStop(bossHit ? .04 : .025); hitFx(bossHit ? .18 : .08); return; }
   // 처치
   m.dead = true; setAnim(m, 'death', false); m.shadow.visible = false;
+  deathBurst(o.position.x, o.position.y, o.position.z, m.boss ? 0xffd0ff : 0xfff1a0);
   if (m.carry > 0) dropGems(o.position.x, o.position.z, m.carry);
   m.carry = 0; G.kills = (G.kills || 0) + 1;
   G.kc = G.kc || {}; G.kc[m.kind] = (G.kc[m.kind] || 0) + 1;
@@ -1559,7 +1570,7 @@ function curveBolt(a, b, col, thick) {
   }
 }
 let aimLineObj = null, gaugeEl = null;
-function muzzle() { return new THREE.Vector3(px + Math.sin(rotY) * .8, 1.4, pz + Math.cos(rotY) * .8); }   // 얼굴·손 앞에서 나가요
+function muzzle() { return new THREE.Vector3(px + Math.sin(rotY) * .8, (py || 0) + 1.4, pz + Math.cos(rotY) * .8); }   // 지붕 위면 지붕 높이에서 쏴요   // 얼굴·손 앞에서 나가요
 function ensureGauge() {
   if (gaugeEl) return gaugeEl;
   if (!document.getElementById('chgCss')) { const st = document.createElement('style'); st.id = 'chgCss'; st.textContent = '#chgGauge{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);width:min(260px,64vw);z-index:9;pointer-events:none;display:none;text-align:center;font-weight:900;font-size:13px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5)}#chgGauge .bar{height:16px;border-radius:12px;background:rgba(0,0,0,.45);border:2px solid #fff;overflow:hidden;margin-top:4px}#chgGauge .fill{height:100%;width:0;background:linear-gradient(90deg,#9fe6ff,#ffd34d);transition:width .05s linear}#chgGauge.lv1 .fill{background:linear-gradient(90deg,#ffd34d,#ff9f3d)}#chgGauge.lv2 .fill{background:linear-gradient(90deg,#ff8a3d,#ff3d3d)}#chgGauge.lv2{animation:chgPulse .25s ease-in-out infinite alternate}@keyframes chgPulse{to{transform:translateX(-50%) scale(1.06)}}'; document.head.appendChild(st); }
@@ -2066,7 +2077,7 @@ function levelFx(lvl) {
 }
 function gainXp(v) {
   G.xp += v;
-  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
+  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); mapExpand(); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
 }
 function levelChoices() {
   if (G.promoDue && !G.promo && PROMO[G.cls]) return { forced: true, list: [Object.assign({ kind: 'promo', key: 'a' }, PROMO[G.cls].a), Object.assign({ kind: 'promo', key: 'b' }, PROMO[G.cls].b)] };
@@ -2174,7 +2185,7 @@ function startNight() {
 function dawn() {
   mons.forEach(m => { if (!m.dead) { m.state = 'flee'; } });
   bossRef = null; $('bossBar').style.display = 'none';
-  G.day += 1;
+  G.day += 1; mapExpand();
   weather = 'clear';
   profile.maxDay = Math.max(profile.maxDay || 0, G.day - 1); saveProfile();
   G.lostGems = 0;
@@ -2960,7 +2971,8 @@ function aptLvSum() { let t = 0; for (const k in G.b) if (G.b[k].t === 'APT') t 
 // 아파트 층수가 올라갈수록 마을(짓는 땅·지킬 땅·적 출현 반경)이 넓어져요
 function mapExpand() {
   let ml = 0; for (const k in G.b) if (G.b[k].t === 'APT') ml = Math.max(ml, G.b[k].lv || 1);
-  const e = Math.max(0, ml - 1), nb = 11 + 3 * e, nl = 22 + 5 * e;
+  const prog = (G.day || 1) - 1 + Math.floor(((G.lvl || 1) - 1) / 3);   // 스테이지·레벨이 오를수록 부지가 넓어져요
+  const e = Math.min(4, Math.max(Math.max(0, ml - 1), prog)), nb = 11 + 3 * e, nl = 22 + 5 * e;
   if (nl === LIM) return;
   const grew = nl > LIM;
   BUILD_R = nb; LIM = nl; SPAWN_R = LIM + 4; FN = 2 * LIM + 1; flowD = new Float32Array(FN * FN);
