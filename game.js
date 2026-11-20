@@ -687,6 +687,59 @@ function buildNodes() {
   }
 }
 // 마을 바깥을 둘러싼 숲: 나무 줄기 + 두 겹의 잎 덩어리를 인스턴스로 묶어 가볍게 그려요
+/* ================= 설원 모드: 눈 덮인 소나무 · 눈보라 · 차가운 안개 ================= */
+const SNOW_FOG = new THREE.Color(0xe4f2ff);
+let snowOn = false, snowGroup = null, snowPts = null, snowPos = null;
+function buildSnowDecor() {
+  const N = 700, R1 = 30, R2 = 90;
+  snowGroup = new THREE.Group(); snowGroup.visible = false; scene.add(snowGroup);
+  const trunkG = new THREE.CylinderGeometry(.14, .22, 1.2, 6); trunkG.translate(0, .6, 0);
+  const layerG = new THREE.ConeGeometry(1, 1.4, 7); layerG.translate(0, .7, 0);   // 초록빛 파란 솔잎 층
+  const capG = new THREE.ConeGeometry(.62, .7, 7); capG.translate(0, .35, 0);      // 위에 쌓인 눈
+  const mk = (g, col) => new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: col, flatShading: true }), N);
+  const trunks = mk(trunkG, 0x5a4330), low = mk(layerG, 0x7fb3a4), mid = mk(layerG, 0x8cc2b0), top = mk(layerG, 0x9dcfbd), c1 = mk(capG, 0xffffff), c2 = mk(capG, 0xffffff), c3 = mk(capG, 0xffffff);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), yA = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random() * (R2 * R2 - R1 * R1) + R1 * R1);
+    p.set(Math.sin(a) * r, 0, Math.cos(a) * r);
+    const k = .8 + Math.random() * .5;
+    q.setFromAxisAngle(yA, Math.random() * 6);
+    const put = (mesh, sx, sy, sz, oy) => { sc.set(sx * k, sy * k, sz * k); m.compose(new THREE.Vector3(p.x, oy * k, p.z), q, sc); mesh.setMatrixAt(i, m); };
+    put(trunks, 1, 1, 1, 0);
+    put(low, 1.5, 1, 1.5, .9);  put(c1, 1.1, 1, 1.1, 1.85);
+    put(mid, 1.15, 1, 1.15, 1.6); put(c2, .8, 1, .8, 2.45);
+    put(top, .75, 1, .75, 2.3); put(c3, .5, 1, .5, 3.0);
+  }
+  for (const mesh of [trunks, low, mid, top, c1, c2, c3]) { mesh.instanceMatrix.needsUpdate = true; snowGroup.add(mesh); }
+  // 눈송이: 플레이어 주변에서 천천히 내려요
+  const SN = 500; snowPos = new Float32Array(SN * 3);
+  for (let i = 0; i < SN; i++) { snowPos[i * 3] = (Math.random() - .5) * 60; snowPos[i * 3 + 1] = Math.random() * 22; snowPos[i * 3 + 2] = (Math.random() - .5) * 60; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+  snowPts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: .16, transparent: true, opacity: .9, depthWrite: false }));
+  snowPts.visible = false; scene.add(snowPts);
+}
+function setSnowMode(on) {
+  if (!snowGroup) return;
+  snowOn = on;
+  snowGroup.visible = on; snowPts.visible = on;
+  (window.forestMeshes || []).forEach(mesh => { mesh.visible = !on; });
+  setGroundTheme(on ? 'snow' : null);
+}
+function updSnow(dt) {   // 매 프레임: 눈 내리기 + 설원 모드 맞추기
+  if (!snowGroup) return;
+  const want = !!(G && G.day >= 10);
+  if (want !== snowOn) setSnowMode(want);
+  if (!snowOn || !snowPts) return;
+  const cx = px, cz = pz;
+  for (let i = 0; i < snowPos.length; i += 3) {
+    snowPos[i + 1] -= dt * (1.6 + (i % 7) * .08);
+    snowPos[i] += Math.sin(gameT * .8 + i) * dt * .3;
+    if (snowPos[i + 1] < 0) { snowPos[i + 1] = 20 + Math.random() * 3; snowPos[i] = (Math.random() - .5) * 60; snowPos[i + 2] = (Math.random() - .5) * 60; }
+  }
+  snowPts.geometry.attributes.position.needsUpdate = true;
+  snowPts.position.set(cx, 0, cz);
+  snowPts.position.y = 0;
+}
 function addForest() {
   const N = 2000, R1 = 30, R2 = 90;
   const trunkG = new THREE.CylinderGeometry(.16, .26, 1.7, 6); trunkG.translate(0, .85, 0);
@@ -708,6 +761,7 @@ function addForest() {
     sc3.set(sc * rnd(.6, .9), sc * rnd(.6, .8), sc * rnd(.6, .9));
     p.set(x + rnd(-.6, .6) * sc, cy + .7 * sc, z + rnd(-.6, .6) * sc); m.compose(p, q, sc3); small.setMatrixAt(i, m); small.setColorAt(i, pal[(Math.random() * pal.length) | 0]);
   }
+  window.forestMeshes = [trunks, big, small];
   for (const mesh of [trunks, big, small]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; scene.add(mesh); }
 }
 // 모서리 전등(노란 등)은 공격을 맞힐수록 충전되고, 10번 차면 폭발해 주변 적에게 피해를 줘요
@@ -2474,7 +2528,7 @@ function updateCycle(dt) {
   scene.children.forEach(c => { if (c.isHemisphereLight) c.intensity = lerp(.85, .34, nf); if (c.isHemisphereLight) c.color.copy(DAY_HEMI).lerp(NIGHT_HEMI, nf); });
   const dayW = sstep(.15, .5, sunUp);
   skyDay.opacity = (1 - nf) * dayW; skyDusk.opacity = (1 - nf) * (1 - dayW); skyNight.opacity = nf;
-  scene.fog.color.copy(DAY_FOG).lerp(NIGHT_FOG, nf);
+  scene.fog.color.copy(snowOn ? SNOW_FOG : DAY_FOG).lerp(NIGHT_FOG, nf);
   const fk = 1 - Math.pow(.05, Math.max(dt, .0001));
   scene.fog.near = lerp(scene.fog.near, weather === 'fog' ? 8 : 42, fk);
   scene.fog.far = lerp(scene.fog.far, weather === 'fog' ? 34 : 92, fk);
@@ -3461,7 +3515,7 @@ function tick(now) {
   }
   if (mayor) mayor.position.y = Math.sin(gameT * 2.2) * .03;
   if (G && running && !modalOpen && !freeze) {
-    updPet(dt);
+    updPet(dt); updSnow(dt);
     comboCd -= dt; if (comboCd <= 0) comboStrike();
   }
   villagers.forEach(v => { v.g.rotation.y = Math.sin(gameT * .8 + v.ph) * .4; });
@@ -3606,7 +3660,7 @@ function tick(now) {
   loadProfile(); loadSettings();
   initScene();
   buildNodes();
-  addForest();
+  addForest(); buildSnowDecor();
   await Promise.all([loadSprites(), loadModels()]);
   addVillageDecor();
   makeMayor();
@@ -3622,7 +3676,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.13';
+const APP_VERSION = '2026.11.21.14';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
