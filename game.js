@@ -628,6 +628,7 @@ function initScene() {
   const gt = sl.load('assets/world/grass.webp'); gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.encoding = THREE.sRGBEncoding; gt.repeat.set(34, 34);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshLambertMaterial({ map: gt }));
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  window.groundMesh = ground;   // 맵 테마 교체용 (아래 setGroundTheme)
   const pt = sl.load('assets/world/stone_path.webp'); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.encoding = THREE.sRGBEncoding; pt.repeat.set(6, 6);
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(BUILD_R * 2 + 2, BUILD_R * 2 + 2), new THREE.MeshLambertMaterial({ map: pt, color: 0xfff6e6, transparent: true, opacity: .8 }));
   plaza.rotation.x = -Math.PI / 2; plaza.position.y = .004; plaza.receiveShadow = true; plaza.material.depthWrite = false; plaza.renderOrder = -2; world.add(plaza);
@@ -2396,6 +2397,14 @@ function openDialog() {
 function closeDialog() { mode = 'FIELD'; $('dialog').style.display = 'none'; }
 
 /* ================= 밤낮 · 웨이브 ================= */
+// 새 맵 테마 바닥 (눈·사막·용암). 스테이지 전환 때 호출해요.
+const THEME_TEX = { snow: 'assets/maps/snow-ground.jpg', sand: 'assets/maps/sand-ground.jpg', lava: 'assets/maps/lava-ground.jpg' };
+const themeCache = {};
+function setGroundTheme(name) {
+  const g = window.groundMesh, url = THEME_TEX[name]; if (!g || !url) return;
+  const tex = themeCache[name] || (themeCache[name] = new THREE.TextureLoader().load(url, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(34, 34); }));
+  g.material.map = tex; g.material.needsUpdate = true;
+}
 function nightF(c) { return sstep(DAY_LEN - 4, DAY_LEN + 6, c) * (1 - sstep(CYCLE - 8, CYCLE, c)); }
 function sunTheta(c) { return c < DAY_LEN ? (c / DAY_LEN) * Math.PI : Math.PI + ((c - DAY_LEN) / NIGHT_LEN) * Math.PI; }
 const DAY_HEMI = new THREE.Color(0xdff3ff), NIGHT_HEMI = new THREE.Color(0x3b4d7f);
@@ -3602,7 +3611,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.10';
+const APP_VERSION = '2026.11.21.11';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
