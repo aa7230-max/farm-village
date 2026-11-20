@@ -965,7 +965,7 @@ function updProjs(dt) {
     const f = Math.floor(p.at * 12) % p.n; p.tx.offset.x = f / p.n; p.tx.repeat.x = 1 / p.n;
     if (p.toPlayer) {
       p.sp.position.x += p.vx * dt; p.sp.position.z += p.vz * dt;
-      if (Math.hypot(p.sp.position.x - px, p.sp.position.z - pz) < .7) { hurtPlayer(p.dmg); scene.remove(p.sp); p.sp.material.dispose(); p.tx.dispose(); projs.splice(i, 1); continue; }
+      if (Math.hypot(p.sp.position.x - px, p.sp.position.z - pz) < .7) { hurtPlayer(p.dmg, { x: p.sp.position.x, z: p.sp.position.z }); scene.remove(p.sp); p.sp.material.dispose(); p.tx.dispose(); projs.splice(i, 1); continue; }
       if (p.at > p.life) { scene.remove(p.sp); p.sp.material.dispose(); p.tx.dispose(); projs.splice(i, 1); }
       continue;
     }
@@ -975,12 +975,16 @@ function updProjs(dt) {
     else { p.sp.position.x += dx / dd * 6 * dt; p.sp.position.z += dz / dd * 6 * dt; }
   }
 }
-function hurtPlayer(d) {
+function hurtPlayer(d, src) {
   if (invul > 0 || !G) return;
-  const armor = G.relics && G.relics.stone ? 0 : 0;
-  G.hp = Math.max(0, G.hp - d * (1 - armor));
-  invul = .6; hitFx(.45); hitStop(.05); sfx('hurt'); vib('hurt'); screenFlash('rgba(255,60,60,1)', .32, .35);
+  const dmg = Math.max(1, Math.round(d));
+  G.hp = Math.max(0, G.hp - dmg);
+  invul = .8; hitFx(.8); hitStop(.09); sfx('hurt'); vib('hurt'); screenFlash('rgba(255,50,50,1)', .45, .45);
+  popup(px, py + 1.7, pz, '-' + dmg, '#ff5a5a');
+  if (src) { const dx = px - src.x, dz = pz - src.z, dl = Math.hypot(dx, dz) || 1; vx += dx / dl * 6; vz += dz / dl * 6; }   // 뒤로 밀려요
+  if (player) tweenTo(.8, 1, .3, v => player.scale.setScalar(v), 'back');   // 몸이 찌그러졌다 돌아와요
   if (G.hp <= 0) {
+    popup(px, py + 2.4, pz, '쓰러짐', '#ff5a5a');
     G.hp = G.maxHp; px = 0; pz = 5; toast('쓰러졌어요... 마을에서 다시 일어났어요.'); persistRun();
   }
 }
@@ -1300,7 +1304,7 @@ function updMon(m, dt) {
   if (Math.abs(dx) > .05) m.face = dx >= 0 ? 1 : -1;
   // 플레이어 접촉 피해
   const pd = Math.hypot(px - x, pz - z);
-  if (pd < (m.boss ? 1.8 : 1.1) && m.touchCd <= 0 && (py < 2 || m.d.rng > 0)) { hurtPlayer(m.d.dmg * .5); m.touchCd = .6; }
+  if (pd < (m.boss ? 1.8 : 1.1) && m.touchCd <= 0 && (py < 2 || m.d.rng > 0)) { hurtPlayer(m.d.dmg * .8 * (m.boss ? 1.5 : 1), { x: m.obj.position.x, z: m.obj.position.z }); m.touchCd = .6; }
   m.cd -= dt;
   const inRange = m.d.rng > 0 ? dd < m.d.rng : dd < (m.boss ? 1.8 : 1.25);
   if (m.boss) {
@@ -2782,23 +2786,24 @@ function nearPerch() {
 }
 let hitMoved = false;
 function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어 다녀요 (옮기기 전까지)
-  const hb = $('bHit'), g = document.getElementById('hitGrip'); if (!hb || !g || hitMoved) return;
-  const r = hb.getBoundingClientRect(); g.style.display = r.width > 0 ? 'block' : 'none';
-  g.style.left = (r.right - 14) + 'px'; g.style.top = (r.top - 10) + 'px';
+  return;
 }
-function setupHitGrip() {   // 공격 버튼만 손잡이(✥)로 끌어서 옮겨요. 다른 버튼은 제자리에 있어요
+let hdrag = null;
+function setupHitGrip() {   // 공격 버튼: 누른 채 끌면 버튼이 따라와요. 가만히 누르면 기를 모아요
   const hb = $('bHit'); if (!hb) return;
-  const g = document.createElement('div'); g.id = 'hitGrip'; g.textContent = '✥';
-  g.style.cssText = 'position:fixed;z-index:7;width:24px;height:24px;border-radius:12px;background:rgba(255,250,238,.92);border:2px solid #ecd3a2;font-size:13px;font-weight:900;line-height:20px;text-align:center;touch-action:none;user-select:none;cursor:move';
-  document.body.appendChild(g);
-  const place = (l, t) => { hitMoved = true; hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; g.style.left = (l + 22) + 'px'; g.style.top = (t - 12) + 'px'; };
+  const g = document.getElementById('hitGrip'); if (g) g.style.display = 'none';
+  const place = (l, t) => { hitMoved = true; hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; };
+  const save = () => { try { localStorage.setItem('farm-hit-pos2', JSON.stringify({ l: parseInt(hb.style.left, 10) || 0, t: parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
   let sv = null; try { sv = JSON.parse(localStorage.getItem('farm-hit-pos2') || 'null'); } catch (e) {}
-  if (sv) { hitMoved = true; place(clamp(sv.l, 0, innerWidth - 80), clamp(sv.t, 0, innerHeight - 80)); }   // 옮긴 적이 있을 때만 위치를 고정해요
-  let gid = null, ox = 0, oy = 0, L = 0, T = 0;
-  g.addEventListener('pointerdown', e => { gid = e.pointerId; const r = hb.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; g.setPointerCapture && g.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
-  g.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; L = clamp(e.clientX - ox, 0, innerWidth - 80); T = clamp(e.clientY - oy, 0, innerHeight - 80); place(L, T); });
-  const end = e => { if (e.pointerId !== gid) return; gid = null; try { localStorage.setItem('farm-hit-pos2', JSON.stringify({ l: L || parseInt(hb.style.left, 10) || 0, t: T || parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
-  g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+  if (sv) { hitMoved = true; place(clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); }
+  hb.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = hb.getBoundingClientRect(); hdrag = { pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false }; });
+  window.addEventListener('pointermove', e => {
+    if (!hdrag || e.pointerId !== hdrag.pid) return;
+    if (!hdrag.moved && Math.hypot(e.clientX - hdrag.sx, e.clientY - hdrag.sy) > 12) { hdrag.moved = true; chargeOn = false; aimOverride = null; }
+    if (hdrag.moved) place(clamp(e.clientX - hdrag.ox, 0, innerWidth - 70), clamp(e.clientY - hdrag.oy, 0, innerHeight - 70));
+  });
+  const end = e => { if (!hdrag || e.pointerId !== hdrag.pid) return; if (hdrag.moved) save(); hdrag = null; };
+  window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
 }
 function setupActGrip() {
   const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
@@ -2970,6 +2975,7 @@ function tick(now) {
     if (skillCd > 0) skillCd -= dt;
     for (const k in xCd) if (xCd[k] > 0) xCd[k] -= dt;
     invul = Math.max(0, invul - dt);
+    if (player) player.visible = invul <= 0 || Math.floor(invul * 14) % 2 === 0;
     // 건물 동작
     for (const k in G.b) {
       const b = G.b[k], [bx, bz] = k.split(',').map(Number);
