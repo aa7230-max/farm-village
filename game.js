@@ -1629,6 +1629,7 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
   return { mz, end, best };
 }
 function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을 따라 곧게 뻗어나가요. 지나가는 적을 모두 관통해요
+  if (sniper) { fireSniper(); return; }   // 지붕 위에서는 저격 판정으로 맞아요
   const cam = aimRay(), range = CLS[G.cls].rng * 2.4 + 6, mz = muzzle();
   let o = cam.o, dir = cam.d.clone();
   const reach = o.distanceTo(mz) + range;
@@ -1893,12 +1894,47 @@ function useSkill() {
 }
 // 운석 낙하: 불타는 돌이 하늘에서 떨어져 주변을 쓸어요. 맞은 적은 크게 다쳐요
 let meteorZone = null;
+const rocks = [];
+function spawnRock(x, z, tx, tz, dmg) {   // 해골이 던진 돌: 포물선으로 날아와요
+  const g = new THREE.Mesh(new THREE.DodecahedronGeometry(.24, 0), new THREE.MeshStandardMaterial({ color: 0x8a7a68, flatShading: true, emissive: 0x221100 }));
+  g.castShadow = true; g.position.set(x, 1.2, z); scene.add(g);
+  rocks.push({ g, sx: x, sz: z, tx, tz, t: 0, dur: .9, dmg });
+}
+function updRocks(dt) {
+  for (let i = rocks.length - 1; i >= 0; i--) {
+    const r = rocks[i]; r.t += dt;
+    const k = Math.min(1, r.t / r.dur), x = r.sx + (r.tx - r.sx) * k, z = r.sz + (r.tz - r.sz) * k;
+    r.g.position.set(x, Math.max(.2, 1.2 + 9 * k * (1 - k) - 1.2 * k), z);
+    r.g.rotation.x += dt * 9; r.g.rotation.z += dt * 7;
+    if (k >= 1) {
+      scene.remove(r.g); r.g.geometry.dispose(); r.g.material.dispose(); rocks.splice(i, 1);
+      puff(x, z, 5, 0x9a8a78);
+      if (Math.hypot(x - px, z - pz) < .9 && (py || 0) < 1.5) hurtPlayer(r.dmg, { x: r.sx, z: r.sz });
+    }
+  }
+}
+function throwRocks(dt) {
+  if (!G || (G.day || 1) < 3 || mode !== 'FIELD' || modalOpen || freeze) return;
+  for (const m of mons) {
+    if (m.dead || m.fly || m.boss || m.kind !== 'skeleton' || !m.obj) continue;
+    if (m.rockCd === undefined) m.rockCd = rnd(2, 4);
+    m.rockCd -= dt;
+    if (m.rockCd > 0) continue;
+    const d = Math.hypot(px - m.obj.position.x, pz - m.obj.position.z);
+    if (d < 10 && d > 2.5) {
+      glowAt(m.obj.position.x, 2, m.obj.position.z, 1.4, 0xffb347, .3);   // 던지기 전 예고
+      spawnRock(m.obj.position.x, m.obj.position.z, px, pz, 3 + (G.day || 1) * .5);
+      m.rockCd = rnd(3, 4.5);
+    } else m.rockCd = .4;
+  }
+}
 function meteorStrike() {
   if (mode !== 'FIELD' || modalOpen) return;
-  const k = skillDmgMul(), R = 6.5 + G.skillLv * .6, N = 9 + G.skillLv * 2, dmg = (6 + G.skillLv * 1.5) * k;
+  const dayUp = (G.day || 1) - 1, k = skillDmgMul() * (1 + .15 * dayUp), R = 6.5 + G.skillLv * .6 + dayUp * .5, N = 9 + G.skillLv * 2 + Math.floor(dayUp / 2), dmg = (6 + G.skillLv * 1.5) * k;
+  const tierCol = G.day >= 8 ? 0x9fe6ff : G.day >= 5 ? 0xc77dff : G.day >= 3 ? 0xffd34d : 0xff8a3d;   // 단계별 색이 바뀌어요
   const cx = px, cz = pz;
   meteorZone = { x: cx, z: cz, R, until: performance.now() + 2600 };
-  const warn = new THREE.Mesh(new THREE.RingGeometry(R - .15, R, 64), new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const warn = new THREE.Mesh(new THREE.RingGeometry(R - .15, R, 64), new THREE.MeshBasicMaterial({ color: tierCol, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
   warn.rotation.x = -Math.PI / 2; warn.position.set(cx, .07, cz); scene.add(warn);
   tweenTo(.75, .3, 1.4, v => { warn.material.opacity = v; }, 'out', 0, () => { scene.remove(warn); warn.material.dispose(); warn.geometry.dispose(); });
   for (let i = 0; i < N; i++) {
@@ -3231,7 +3267,7 @@ function tick(now) {
     updProjs(dt); stepParts(dt);
     atkCd -= dt;
     if (atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode) { if (attackNow(false)) atkCd = .7 / rateMul() / CLS[G.cls].rate; else atkCd = .15; }
-    updateChargeRing(); syncHitGrip();
+    updateChargeRing(); syncHitGrip(); updRocks(dt); throwRocks(dt);
     if (meteorZone && performance.now() < meteorZone.until) {
       for (const m of mons) {
         if (m.dead || !m.fly || !m.obj) continue;
