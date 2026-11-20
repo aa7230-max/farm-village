@@ -184,7 +184,13 @@ let bossRef = null;
 let auraT = 0;
 // ===== v7 신규 시스템 =====
 let weather = 'clear', rainObj = null, pet = null, villagers = [], comboCd = 0, waveT = 0;
-const PET_DEF = { cat: { ic: '🐱', model: 'cat', name: '고양이', cd: 1.0, dmg: 1.0, rng: 3.0 }, pig: { ic: '🐷', model: 'pig', name: '돼지', cd: 1.3, dmg: .9, rng: 2.6 } };
+const PET_DEF = {
+  cat: { ic: '🐱', model: 'cat', name: '고양이', cd: 1.0, dmg: 1.0, rng: 3.0 },
+  pig: { ic: '🐷', model: 'pig', name: '돼지', cd: 1.3, dmg: .9, rng: 2.6 },
+  fox: { ic: '🦊', model: 'fox', name: '여우', cd: .8, dmg: 1.1, rng: 3.4 },
+  sheep: { ic: '🐑', model: 'sheep', name: '양', cd: 1.5, dmg: .8, rng: 2.2 },
+  llama: { ic: '🦙', model: 'llama', name: '라마', cd: 1.2, dmg: .95, rng: 3.2 }
+};
 const PROMO = {
   mage:    { a: { ic: '⚡', t: '뇌신 전직', d: '번개 체인이 4마리 더 튀고 모든 피해 +30%' }, b: { ic: '❄', t: '빙결 전직', d: '스킬에 맞은 적이 1.5초 동안 느려져요' } },
   archer:  { a: { ic: '🔥', t: '화염 전직', d: '화살이 불타 모든 피해 +30%' }, b: { ic: '🎯', t: '관통 전직', d: '화살비가 1.5배 많이 떨어져요' } },
@@ -546,7 +552,7 @@ function loadGLBUrl(url) {
     .then(buf => new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', res, rej)));
 }
 async function loadAnimalModels() {   // 구름 앱의 3D 동물: 고양이·돼지(펫), 늑대·드래곤(적)
-  const jobs = ['cat', 'pig', 'wolf', 'dragon'].map(k => loadGLBUrl('assets/animals/' + k + '.glb').then(g => { MODEL3D[k] = { obj: fitTo(g.scene, 1), clips: g.animations }; }));
+  const jobs = ['cat', 'pig', 'fox', 'sheep', 'llama', 'wolf', 'dragon'].map(k => loadGLBUrl('assets/animals/' + k + '.glb').then(g => { MODEL3D[k] = { obj: fitTo(g.scene, 1), clips: g.animations }; }));
   await Promise.all(jobs.map(p => p.catch(e => showErr('animal ' + (e.message || e)))));
 }
 async function loadModels() {
@@ -2302,8 +2308,15 @@ function levelChoices() {
     pool.push({ kind: 'xskill', key: k, ic: XSKILLS[k].ic, t: lv ? XSKILLS[k].name + ' 강화 → Lv ' + (lv + 1) : '✨ ' + XSKILLS[k].name + ' 배우기', d: XSKILLS[k].d });
   }
   if (G.lvl >= 3 && !G.pet) {
-    pool.push({ kind: 'pet', key: 'cat', ic: '🐱', t: '고양이 입양', d: '가까이 있는 적을 할퀴고 보석을 물어 와요' });
-    pool.push({ kind: 'pet', key: 'pig', ic: '🐷', t: '돼지 입양', d: '튼튼하게 적을 받아치고 보석을 모아요' });
+    // 입양 후보 3마리를 매번 다르게 골라요 (고양이·돼지·여우·양·라마)
+    const PETS = [
+      { key: 'cat', ic: '🐱', t: '고양이 입양', d: '가까이 있는 적을 할퀴고 보석을 물어 와요' },
+      { key: 'pig', ic: '🐷', t: '돼지 입양', d: '튼튼하게 적을 받아치고 보석을 모아요' },
+      { key: 'fox', ic: '🦊', t: '여우 입양', d: '빠르게 달려가 적을 물고 보석을 찾아요' },
+      { key: 'sheep', ic: '🐑', t: '양 입양', d: '느리지만 든든하게 보석을 지켜요' },
+      { key: 'llama', ic: '🦙', t: '라마 입양', d: '멀리 침을 뱉어 적을 쓰러뜨려요' }
+    ];
+    for (const p of PETS.slice().sort(() => Math.random() - .5).slice(0, 3)) pool.push(Object.assign({ kind: 'pet' }, p));
   }
   return { forced: false, list: pool };
 }
@@ -3589,7 +3602,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.9';
+const APP_VERSION = '2026.11.21.10';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
