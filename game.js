@@ -3587,7 +3587,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.6';
+const APP_VERSION = '2026.11.21.7';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
@@ -3629,5 +3629,17 @@ function setupSettings() {
   document.addEventListener('pointerdown', unlock);
   // 몬스터가 살아 있으면 전투 곡, 아니면 잔잔한 곡
   setInterval(() => { setTrack(mons.some(m => !m.dead) ? 'battle' : 'field'); }, 500);
+  // 앱을 열 때 조용히 새 버전을 확인해서, 있으면 설정 버튼에 🆕 표시를 달아요
+  silentUpdateCheck();
+}
+function silentUpdateCheck() {
+  fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => {
+      if (!j || j.version === APP_VERSION) return;
+      const b = document.getElementById('bSettings'); if (b) b.textContent = '⚙ 설정 🆕';
+      toast('🆕 새 업데이트가 있어요. 설정 → 업데이트 확인에서 받을 수 있어요.');
+    })
+    .catch(() => { });
 }
 setupSettings();
