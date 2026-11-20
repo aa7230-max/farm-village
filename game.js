@@ -355,13 +355,22 @@ function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(set
 
 
 /* ================= 배경음악: 코드로 만든 잔잔한 마을 곡 · 전투 곡 (파일 없이 바로 재생) ================= */
-const TRACKS = {
-  // 잔잔한 C장조: 느린 패드 + 부드러운 아르페지오
-  field: { bpm: 84, chords: [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], pat: [0, 1, 2, 1, 0, 2, 1, 2], lead: 'triangle', leadVol: .07, pad: true, drums: false, bass: false },
-  // 전투: A단조, 빠른 박자 + 킥·하이햇 + 톱니파 베이스 + 사각파 리드
-  battle: { bpm: 140, chords: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [52, 56, 59]], pat: [0, 2, 1, 2, 0, 2, 1, 2], lead: 'square', leadVol: .03, pad: false, drums: true, bass: true }
+const MOODS = {
+  // 잔잔한 곡들 (마을·준비 시간)
+  field: [
+    { name: 'C 잔잔', bpm: 84, sets: [[[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], [[60, 64, 67], [53, 57, 60], [57, 60, 64], [55, 59, 62]]], pats: [[0, 1, 2, 1, 0, 2, 1, 2], [0, 2, 1, 2, 0, 1, 2, 1], [0, 1, 0, 2, 1, 2, 1, 0]], lead: 'triangle', leadVol: .07, pad: true, drums: false, bass: false },
+    { name: 'A 몽환', bpm: 74, sets: [[[57, 60, 64], [53, 57, 60], [60, 64, 67], [52, 55, 59]], [[57, 60, 64], [52, 55, 59], [53, 57, 60], [55, 59, 62]]], pats: [[0, 1, 2, 1, 2, 1, 0, 1], [0, 2, 1, 0, 2, 1, 2, 0]], lead: 'sine', leadVol: .06, pad: true, drums: false, bass: false },
+    { name: 'F 여유', bpm: 96, sets: [[[53, 57, 60], [48, 52, 55], [50, 53, 57], [55, 59, 62]], [[53, 57, 60], [57, 60, 64], [50, 53, 57], [48, 52, 55]]], pats: [[0, 2, 1, 2, 0, 1, 2, 1], [0, 1, 2, 2, 1, 0, 1, 2]], lead: 'triangle', leadVol: .07, pad: false, drums: true, bass: false }
+  ],
+  // 전투 곡들 (적이 살아 있을 때)
+  battle: [
+    { name: 'A 긴박', bpm: 140, sets: [[[57, 60, 64], [53, 57, 60], [48, 52, 55], [52, 56, 59]], [[57, 60, 64], [48, 52, 55], [53, 57, 60], [52, 56, 59]]], pats: [[0, 2, 1, 2, 0, 2, 1, 2], [0, 1, 2, 1, 0, 2, 0, 2]], lead: 'square', leadVol: .03, pad: false, drums: true, bass: true },
+    { name: 'D 긴장', bpm: 150, sets: [[[50, 53, 57], [58, 62, 65], [53, 57, 60], [57, 61, 64]], [[50, 53, 57], [53, 57, 60], [58, 62, 65], [57, 61, 64]]], pats: [[0, 1, 2, 1, 0, 2, 1, 2], [0, 2, 0, 2, 1, 2, 1, 0]], lead: 'sawtooth', leadVol: .025, pad: false, drums: true, bass: true },
+    { name: 'E 질주', bpm: 128, sets: [[[52, 55, 59], [48, 52, 55], [57, 60, 64], [59, 62, 66]], [[52, 55, 59], [57, 60, 64], [48, 52, 55], [59, 62, 66]]], pats: [[0, 2, 1, 2, 0, 2, 1, 2]], lead: 'square', leadVol: .03, pad: false, drums: true, bass: true }
+  ]
 };
-const MUS = { cur: null, track: null, gain: null, timer: null, swap: null, next: 0, step: 0, noise: null };
+const KICKS = [[0, 4], [0, 2, 4, 6], [0, 3, 4, 6], [0, 4, 6]];
+const MUS = { cur: null, track: null, gain: null, timer: null, swap: null, next: 0, step: 0, noise: null, last: null, set: 0, pat: null, oct: 0, padOn: true, kicks: [0, 4], hatAll: false };
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 function musVol() { return settings.bgm / 100 * .22; }
 function musGain() {
@@ -389,16 +398,30 @@ function musHat(t, dest) {
   g.gain.setValueAtTime(.22, t); g.gain.exponentialRampToValueAtTime(.0001, t + .05);
   src.connect(f).connect(g).connect(dest); src.start(t); src.stop(t + .06);
 }
+function pickTrack(name) {   // 같은 곡이 연달아 나오지 않게 골라요
+  const L = MOODS[name]; let T;
+  do { T = L[(Math.random() * L.length) | 0]; } while (L.length > 1 && T === MUS.last);
+  MUS.last = T; return T;
+}
 function musTick() {
   const T = MUS.track; if (!T || !AC) return;
   const dest = musGain(); if (!dest) return;
   const sd = 60 / T.bpm / 2;   // 8분음표 한 칸
   while (MUS.next < AC.currentTime + .15) {
-    const s = MUS.step % 8, ch = T.chords[Math.floor(MUS.step / 8) % T.chords.length], t = MUS.next;
-    if (s === 0 && T.pad) ch.forEach(n => musNote(t, n - 12, sd * 8 * 1.1, 'sine', .05, dest));
-    musNote(t, ch[T.pat[s]] + 12, sd * 1.8, T.lead, T.leadVol, dest);
+    const s = MUS.step % 8, bar = Math.floor(MUS.step / 8), t = MUS.next;
+    if (s === 0) {   // 마디마다 조금씩 바뀌는 리믹스
+      if (bar % 4 === 0) MUS.set = (Math.random() * T.sets.length) | 0;
+      MUS.pat = T.pats[(Math.random() * T.pats.length) | 0];
+      const r = Math.random(); MUS.oct = r < .15 ? -12 : r < .3 ? 12 : 0;
+      MUS.padOn = Math.random() < .8;
+      MUS.kicks = KICKS[(Math.random() * KICKS.length) | 0];
+      MUS.hatAll = Math.random() < .3;
+    }
+    const ch = T.sets[MUS.set || 0][bar % 4];
+    if (s === 0 && T.pad && MUS.padOn) ch.forEach(n => musNote(t, n - 12, sd * 8 * 1.1, 'sine', .05, dest));
+    musNote(t, ch[MUS.pat[s]] + 12 + MUS.oct, sd * 1.8, T.lead, T.leadVol, dest);
     if (T.bass && s % 2 === 0) musNote(t, ch[0] - 24, sd * 1.9, 'sawtooth', .045, dest);
-    if (T.drums) { if (s % 4 === 0) musKick(t, dest); if (s % 2 === 1) musHat(t, dest); }
+    if (T.drums) { if (MUS.kicks.includes(s)) musKick(t, dest); if (s % 2 === 1 || MUS.hatAll) musHat(t, dest); }
     MUS.next += sd; MUS.step++;
   }
 }
@@ -409,7 +432,7 @@ function setTrack(name) {   // 'field' | 'battle' | null, 부드럽게 바꿔요
   g.gain.cancelScheduledValues(a.currentTime); g.gain.setTargetAtTime(0, a.currentTime, .08);
   clearTimeout(MUS.swap);
   MUS.swap = setTimeout(() => {
-    MUS.track = name ? TRACKS[name] : null; MUS.step = 0; MUS.next = AC.currentTime + .1;
+    MUS.track = name ? pickTrack(name) : null; MUS.step = 0; MUS.next = AC.currentTime + .1;
     g.gain.setTargetAtTime(name ? musVol() : 0, AC.currentTime, .3);
   }, 350);
   if (!MUS.timer) MUS.timer = setInterval(musTick, 40);
@@ -3564,7 +3587,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.5';
+const APP_VERSION = '2026.11.21.6';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
