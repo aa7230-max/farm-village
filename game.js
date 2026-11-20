@@ -28,7 +28,7 @@ const BUILD = {
   APT:   { wood: 8, stone: 6, name: '아파트', hp: 60 },
   MINE:  { wood: 4, stone: 4, name: '광산', hp: 24 },
   WALL:  { wood: 1, stone: 2, name: '성벽', hp: 45 },
-  LAMP:  { wood: 1, stone: 1, name: '전등', hp: 12 },
+  LAMP:  { wood: 1, stone: 1, name: '전등', hp: 10 },
   TRAP:  { wood: 2, stone: 2, name: '가시 덫', hp: 10 }
 };
 const MON = {
@@ -503,7 +503,7 @@ function initScene() {
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
   const pt = sl.load('assets/world/stone_path.webp'); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.encoding = THREE.sRGBEncoding; pt.repeat.set(6, 6);
   const plaza = new THREE.Mesh(new THREE.PlaneGeometry(BUILD_R * 2 + 2, BUILD_R * 2 + 2), new THREE.MeshLambertMaterial({ map: pt, color: 0xfff6e6, transparent: true, opacity: .8 }));
-  plaza.rotation.x = -Math.PI / 2; plaza.position.y = .012; plaza.receiveShadow = true; world.add(plaza);
+  plaza.rotation.x = -Math.PI / 2; plaza.position.y = .004; plaza.receiveShadow = true; plaza.material.depthWrite = false; plaza.renderOrder = -2; world.add(plaza);
   const lake = new THREE.Mesh(new THREE.CircleGeometry(LAKE.r, 48), new THREE.MeshPhongMaterial({ color: 0x8fd6f2, shininess: 110, transparent: true, opacity: .94 }));
   lake.rotation.x = -Math.PI / 2; lake.position.set(LAKE.x, .03, LAKE.z); scene.add(lake);
   const shore = new THREE.Mesh(new THREE.RingGeometry(LAKE.r, LAKE.r + .5, 48), new THREE.MeshLambertMaterial({ color: 0xf2e2a6 }));
@@ -970,15 +970,27 @@ function spawnMon(kind, boss) {
   mons.push(m); puff(x, z, 6, 0xd9f0c0);
   if (boss) { bossRef = m; $('bossBar').style.display = 'block'; $('bossName').textContent = BOSS[kind].name + ' · ' + G.day + '일차'; sfx('boss'); vib('boss'); }
 }
+function lampBlast(bx, bz) {   // 전등이 부서지면 주변이 폭발해요
+  const R = 2.6;
+  glowAt(bx, .8, bz, 4.2, 0xffb347, .45); puff(bx, bz, 18, 0xffc070); hitFx(.5); hitStop(.07); sfx('boss');
+  for (const k2 of Object.keys(G.b)) {
+    const [x2, z2] = k2.split(',').map(Number);
+    if (G.b[k2] && G.b[k2].t !== 'LAMP' && Math.hypot(x2 - bx, z2 - bz) <= R) hurtBuildingAt(k2, 4, null);
+  }
+  for (const m of mons.slice()) if (!m.dead && Math.hypot(m.obj.position.x - bx, m.obj.position.z - bz) <= R) hitEnemy(m, m.boss ? 30 : 9999, { kb: 1.4 });
+  toast('💥 전등이 폭발했어요!');
+}
 function hurtBuildingAt(k, dmg, m) {
   const b = G.b[k]; if (!b) return;
+  if (b.t === 'LAMP') dmg = 1;   // 전등은 10번 맞으면 부서져요
   b.hp -= dmg;
   const mesh = bmesh[k]; if (mesh) tweenTo(1.08, 1, .2, v => mesh.scale.set(v, 1 / v, v), 'out');
   const [bx, bz] = k.split(',').map(Number);
   puff(bx, bz, 4, 0xd9b98a);
   if (b.hp <= 0) {
-    const g = b.g || 0;
+    const g = b.g || 0, wasLamp = b.t === 'LAMP';
     removeBuildingMesh(k); delete G.b[k]; netSend('remove', { k });
+    if (wasLamp) lampBlast(bx, bz);
     if (m) { m.carry = (m.carry || 0) + g; m.state = 'flee'; m.tk = null; toast('🏚 집이 무너졌어요! 도둑이 보석을 훔쳐 가요!'); }
     else { if (g) dropGems(bx, bz, g); toast('🏚 집이 무너졌어요! 보석이 떨어졌어요.'); }
     puff(bx, bz, 14, 0xc9a27a); hitFx(.35); persistRun();
@@ -1611,7 +1623,7 @@ function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을
     v.copy(c).sub(o);
     const t = v.dot(dir);
     if (t < 0 || t > reach) continue;
-    if (v.clone().addScaledVector(dir, -t).length() < .8) hits.push({ m, t });
+    if (v.clone().addScaledVector(dir, -t).length() < .8 + t * .06) hits.push({ m, t });
   }
   hits.sort((a, b) => a.t - b.t);
   const col = G.cls === 'archer' ? 0xfff1a0 : 0x9fe6ff;
