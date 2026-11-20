@@ -84,6 +84,10 @@ button{font-family:inherit;cursor:pointer}
   #palette{top:52px;bottom:auto;left:50%;transform:translateX(-50%);right:auto;max-width:54vw}
   #dialog{left:8%;right:8%;bottom:8px;padding:10px 12px}
   #hud{top:max(16px,calc(env(safe-area-inset-top,0px) + 8px));left:6px;right:6px}
+  #hud #hudTog{font-size:13px;padding:4px 10px;border-width:2px}
+  #actions{right:10px;bottom:10px;grid-template-columns:repeat(2,50px);gap:6px}
+  #actions .rb{width:50px;height:50px;font-size:9px;border-width:2px}
+  #bPadAtk{left:148px!important;bottom:18px!important;width:54px!important;height:54px!important;font-size:20px!important}
   #topR .chip{font-size:11px}
   #bossBar{top:44px}
 }
@@ -312,7 +316,7 @@ button{font-family:inherit;cursor:pointer}
 
   <!-- 조작 -->
   <div id="pad" class="hidden"><div id="knob"></div></div>
-  <button id="bPadAtk" class="hidden" title="공격 (A)" style="position:absolute;left:200px;bottom:208px;width:52px;height:52px;border-radius:50%;font-size:22px;z-index:5;border:3px solid #fff;background:radial-gradient(circle at 35% 28%,#fff8f2,#ffd6b8 70%);box-shadow:0 4px 0 #d98a6b;padding:0">⚔</button>
+  <button id="bPadAtk" class="hidden" title="직선 번개 (A)" style="position:absolute;left:200px;bottom:208px;width:52px;height:52px;border-radius:50%;font-size:22px;z-index:5;border:3px solid #fff;background:radial-gradient(circle at 35% 28%,#fff8f2,#ffd6b8 70%);box-shadow:0 4px 0 #d98a6b;padding:0">⚡</button>
   <div id="actions" class="hidden">
     <div id="skillCol"><button class="rb skill" id="bSkill"><span class="cd" id="skillCd"></span><span id="skillTxt" style="white-space:nowrap">⚡ 낙뢰</span></button><div id="xSkills"></div></div>
     <button class="rb hit" id="bHit">⚔ 공격</button>
@@ -418,7 +422,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="load"><div class="spin"></div>🌿 마을을 준비하는 중…</div>
   <div id="err"></div>
 </div>
-<script src="game.js?v=2026.11.21.8"></script>
+<script src="game.js?v=2026.11.21.9"></script>
 <script>
 // 오프닝: 표지를 쓸어올리거나(좌우로 밀거나) 시작 버튼을 누르면 홈 화면이 나와요
 (function(){
