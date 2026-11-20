@@ -1418,10 +1418,11 @@ function hitEnemy(m, dmg, opt) {
   m.kx += (o.position.x - px) / d * kb; m.kz += (o.position.z - pz) / d * kb;
   const bossHit = m.boss;
   popup(o.position.x, .6, o.position.z, '-' + Math.max(1, Math.round(dmg)), bossHit ? '#ffd0ff' : '#fff6c2');
+  fxBurst(o.position.x, .9, o.position.z, bossHit ? 1.8 : 1.1); glowAt(o.position.x, .5, o.position.z, bossHit ? 2.8 : 1.6, bossHit ? 0xffb3ec : 0xfff1a0, .18);
   if (m.hp > 0) { m.hitLock = .12; setAnim(m, 'hit', false); sfx('hit'); vib('hit'); hitStop(bossHit ? .04 : .025); hitFx(bossHit ? .18 : .08); return; }
   // 처치
   m.dead = true; setAnim(m, 'death', false); m.shadow.visible = false;
-  deathBurst(o.position.x, o.position.y, o.position.z, m.boss ? 0xffd0ff : 0xfff1a0);
+  deathBurst(o.position.x, o.position.y, o.position.z, m.boss ? 0xffd0ff : 0xfff1a0); fxBurst(o.position.x, 1.1, o.position.z, m.boss ? 3.4 : 2.2); screenFlash('#fff3c0', .14, .18);
   if (m.carry > 0) dropGems(o.position.x, o.position.z, m.carry);
   m.carry = 0; G.kills = (G.kills || 0) + 1;
   G.kc = G.kc || {}; G.kc[m.kind] = (G.kc[m.kind] || 0) + 1;
@@ -2182,10 +2183,24 @@ function startNight() {
   if (isBoss) { STORY[G.day] || 0; }
   sfx('boss');
 }
+function stageBanner(title, sub) {   // 크게 "클리어!" 문구를 띄워요
+  let el = document.getElementById('stageBanner');
+  if (!el) {
+    const st = document.createElement('style');
+    st.textContent = '#stageBanner{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scale(.6);z-index:40;text-align:center;pointer-events:none;opacity:0;transition:opacity .35s,transform .45s cubic-bezier(.2,1.4,.4,1);background:linear-gradient(#fff8dc,#ffe08a);border:4px solid #d9a93a;border-radius:24px;padding:14px 26px;box-shadow:0 10px 0 #b8862a,0 18px 30px rgba(60,30,0,.35)} #stageBanner.show{opacity:1;transform:translate(-50%,-50%) scale(1)} #stageBanner b{display:block;font-size:26px;font-weight:900;color:#5a3a00} #stageBanner small{display:block;font-size:14px;font-weight:700;color:#7a5a20;margin-top:4px}';
+    document.head.appendChild(st);
+    el = document.createElement('div'); el.id = 'stageBanner'; document.body.appendChild(el);
+  }
+  el.innerHTML = '<b>' + title + '</b><small>' + sub + '</small>';
+  el.classList.add('show'); clearTimeout(stageBanner._t);
+  stageBanner._t = setTimeout(() => el.classList.remove('show'), 2600);
+}
 function dawn() {
   mons.forEach(m => { if (!m.dead) { m.state = 'flee'; } });
   bossRef = null; $('bossBar').style.display = 'none';
   G.day += 1; mapExpand();
+  stageBanner(`☀ ${G.day - 1}일차 클리어!`, `${G.day}일차 아침이 밝았어요`);
+  screenFlash('#ffe9a0', .45, .9); glowAt(px, 2.5, pz, 9, 0xffe9a0, 1.2); hitStop(.1);
   weather = 'clear';
   profile.maxDay = Math.max(profile.maxDay || 0, G.day - 1); saveProfile();
   G.lostGems = 0;
