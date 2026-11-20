@@ -1583,24 +1583,18 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
   const end = best ? bc : mz.clone().addScaledVector(dir, range);
   return { mz, end, best };
 }
-function updateLaser(dt) {
-  const on = chargeOn && chargeEl && chargeEl.id === 'bPadAtk' && mode === 'FIELD' && !modalOpen && !buildMode && !sniper;
-  if (!laserMesh) { laserMesh = new THREE.Mesh(new THREE.BoxGeometry(.12, .12, 1), new THREE.MeshBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false })); laserMesh.visible = false; scene.add(laserMesh); }
-  if (!on) { laserMesh.visible = false; laserCd = 0; return; }
+function fireLightningLine() {   // 번개가 조준선(화면 가운데 또는 끈 방향)과 영점이 맞게 곧장 나가요. 공중 몬스터도 맞아요
   const { mz, end, best } = laserAim();
-  const len = Math.max(.1, mz.distanceTo(end));
-  laserMesh.visible = true;
-  laserMesh.position.copy(mz).lerp(end, .5);
-  laserMesh.scale.set(1, 1, len);
-  laserMesh.lookAt(end);
-  laserMesh.material.opacity = .75 + .2 * Math.sin(gameT * 30);
-  laserCd -= dt;
-  if (laserCd <= 0 && best && !best.dead) {   // 빔이 닿는 동안 계속 피해를 줘요
-    laserCd = .18;
-    hitEnemy(best, best.boss ? baseHit(best) * 1.2 : 9999, { kb: 0 });
-    glowAt(end.x, end.y, end.z, 1.1, 0x7ff3ff, .15);
-  }
-  if (laserCd < -1) laserCd = 0;
+  const col = G.cls === 'archer' ? 0xfff1a0 : 0x9fe6ff;
+  // 번개 줄기 (지그재그) — 조준선 위로 곧장
+  bolt([mz.clone(), mz.clone().lerp(end, .33), mz.clone().lerp(end, .66), end.clone()], col);
+  glowAt(mz.x, mz.y, mz.z, 1.2, col, .18);
+  sendFx(0, mz, { x: end.x, z: end.z });
+  if (best && !best.dead) hitEnemy(best, best.boss ? baseHit(best) * 3 : 9999, { kb: .6 });
+  breakNodesAt(end.x, end.z, 1.1);
+  scorchAt(end.x, end.z, .35);
+  puff(end.x, end.z, 4, 0x3a2a1a);
+  sfx('skill'); hitFx(.12);
 }
 function chargeRelease(assist) {
   if (!chargeOn) return;
@@ -1608,7 +1602,7 @@ function chargeRelease(assist) {
   if (mode !== 'FIELD' || modalOpen || buildMode) { aimOverride = null; return; }
   if (sniper) { fireSniper(); return; }
   if (chargeEl && chargeEl.id === 'bPadAtk') {   // 왼쪽 버튼: 조준한 방향으로 곧게 쏴요
-    aimOverride = null; chargeEl = null; return;   // 왼쪽 버튼은 누르는 동안 레이저로 쏴요
+    fireLightningLine(); aimOverride = null; chargeEl = null; return;   // 왼쪽 버튼: 번개가 조준선과 영점이 맞게 곧장 나가요
   }
   if (aimOverride) { const lv = Math.min(Math.max(held, .3), 2.5); chargedZap(lv); aimOverride = null; return; }   // 드래그한 자리에 떨어뜨려요
   if (assist || chargeAssist) assistAim();
@@ -3150,7 +3144,7 @@ function tick(now) {
     updProjs(dt); stepParts(dt);
     atkCd -= dt;
     if (atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode) { if (attackNow(false)) atkCd = .7 / rateMul() / CLS[G.cls].rate; else atkCd = .15; }
-    updateChargeRing(); syncHitGrip(); updateLaser(dt);
+    updateChargeRing(); syncHitGrip();
     if (meteorZone && performance.now() < meteorZone.until) {
       for (const m of mons) {
         if (m.dead || !m.fly || !m.obj) continue;
