@@ -1120,9 +1120,15 @@ function lampBlast(bx, bz) {   // 전등이 부서지면 전기가 크게 터지
   for (const m of mons.slice()) if (!m.dead && Math.hypot(m.obj.position.x - bx, m.obj.position.z - bz) <= R) hitEnemy(m, m.boss ? 30 : 9999, { kb: 1.4 });
   toast('⚡ 전등이 전기 폭발을 일으켰어요!');
 }
-function lampZap(k) {   // 공격이 전등에 닿으면 전기가 튀고, 조금씩 부서져요
+function lampZap(k) {   // 공격이 전등에 닿으면 전기가 튀고, 전등이 찌그러지며 번쩍여요
   const [bx, bz] = k.split(',').map(Number);
-  electricBurst(bx, bz, 1.6, 4); sfx('hit'); hitFx(.12);
+  const mesh = bmesh[k];
+  electricBurst(bx, bz, 1.6, 5); sfx('hit'); sfx('skill'); hitFx(.22); hitStop(.05); vib('hit');
+  if (mesh) {
+    tweenTo(1.3, 1, .3, v => { mesh.scale.set(v, 1 / v, v); }, 'back');
+    tweenTo(.6, 1, .25, v => { if (mesh.userData.halo) mesh.userData.halo.scale.setScalar(2.2 * v); }, 'out');
+  }
+  glowAt(bx, 1.9, bz, 2.2, 0xffffff, .2);
   hurtBuildingAt(k, 2, null, true);
 }
 function hurtBuildingAt(k, dmg, m, zap) {
@@ -2450,12 +2456,13 @@ function canBuildAt(x, z) {
   if (Math.abs(x) > BUILD_R || Math.abs(z) > BUILD_R) return false;
   if (Math.hypot(x - MAYOR.x, z - MAYOR.z) < 1.5 || Math.hypot(x - px, z - pz) < 1.1) return false;
   const has = !!G.b[bkey(x, z)];
+  if (selType === 'MOVE') return G.carry ? (!has && G.carry !== bkey(x, z)) : (has && G.b[bkey(x, z)].t === 'LAMP');
   return selType === 'REMOVE' ? has : !has;
 }
 function refreshGhostB() {
   if (ghostB) { scene.remove(ghostB); ghostB = null; }
   if (selType === 'REMOVE') return;
-  ghostB = makeBuilding(selType, 0, 0);
+  ghostB = makeBuilding(selType === 'MOVE' ? 'LAMP' : selType, 0, 0);
   ghostB.traverse(o => { if (o.isMesh) { const m = o.material.clone(); m.transparent = true; m.opacity = .5; m.depthWrite = false; o.material = m; o.castShadow = false; o.receiveShadow = false; } });
   ghostB.visible = false; scene.add(ghostB);
 }
@@ -2467,6 +2474,24 @@ function placeAt(x, z) {
   const k = bkey(x, z);
   if (Math.hypot(x - MAYOR.x, z - MAYOR.z) < 1.5 || Math.hypot(x - px, z - pz) < 1.1) { toast('이 자리에는 지을 수 없어요.'); return; }
   if (selType !== 'REMOVE' && (Math.hypot(x, z) < 4.3 || (selType === 'APT' && Math.hypot(x + 3.5, z) < 4.6))) { toast('보석 근처에는 지을 수 없어요.'); return; }
+  if (selType === 'MOVE') {   // 🚚 전등 옮기기: 전등을 집고, 원하는 빈 땅에 내려놓아요
+    if (!G.carry) {
+      if (!G.b[k] || G.b[k].t !== 'LAMP') { toast('옮길 전등을 눌러 주세요.'); return; }
+      G.carry = k; puff(x, z, 6, 0xffe08a); sfx('place'); vib('place');
+      toast('🏮 전등을 들었어요. 원하는 빈 땅을 눌러 내려놓으세요.'); return;
+    }
+    if (G.carry === k) { G.carry = null; toast('전등을 그 자리에 두었어요.'); return; }
+    if (G.b[k]) { toast('이미 지어진 땅이에요.'); return; }
+    const from = G.carry, old = G.b[from]; G.carry = null;
+    if (!old) return;
+    delete G.b[from]; removeBuildingMesh(from); netSend('remove', { k: from });
+    G.b[k] = old; netSend('build', { k, t: 'LAMP', hp: old.hp });
+    const m = makeBuilding('LAMP', x, z); world.add(m); bmesh[k] = m;
+    m.scale.setScalar(.01); m.position.y = 2.2;
+    tweenTo(.01, 1, .5, v => m.scale.setScalar(v), 'back');
+    tweenTo(2.2, 0, .5, v => { m.position.y = v; }, 'out');
+    puff(x, z, 10, 0xffe08a); sfx('place'); vib('place'); toast('🏮 전등을 옮겼어요!'); persistRun(); return;
+  }
   if (selType === 'REMOVE') {
     if (!G.b[k]) { toast('철거할 것이 없어요.'); return; }
     const g = G.b[k].g || 0; G.res.gems += g;
