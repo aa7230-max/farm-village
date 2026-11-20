@@ -103,7 +103,7 @@ function newRun(cls) {
 let G = null;               // 현재 런 상태
 const PAL_COL = [0xffd34d, 0xff8fb8, 0x7fd0ff, 0x8fe08a, 0xb99cff, 0xff9f5a];
 let profile = { nick: '', cls: 'mage', color: 0 };
-let settings = { sfx: true, vib: true };
+let settings = { sfx: true, vib: true, bgm: 50, sfxVol: 100 };   // bgm·sfxVol: 0~100
 let world, scene, camera, renderer, cv, app;
 let xhOn = true;
 let coreObj = null, coreRing = null, coreHalo = null, coreGem = null, coreHit = 0;
@@ -353,6 +353,69 @@ function saveProfile() { try { localStorage.setItem(PROF_KEY, JSON.stringify(pro
 function loadSettings() { try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY) || '{}')); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { } }
 
+
+/* ================= 배경음악: 코드로 만든 잔잔한 마을 곡 · 전투 곡 (파일 없이 바로 재생) ================= */
+const TRACKS = {
+  // 잔잔한 C장조: 느린 패드 + 부드러운 아르페지오
+  field: { bpm: 84, chords: [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], pat: [0, 1, 2, 1, 0, 2, 1, 2], lead: 'triangle', leadVol: .07, pad: true, drums: false, bass: false },
+  // 전투: A단조, 빠른 박자 + 킥·하이햇 + 톱니파 베이스 + 사각파 리드
+  battle: { bpm: 140, chords: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [52, 56, 59]], pat: [0, 2, 1, 2, 0, 2, 1, 2], lead: 'square', leadVol: .03, pad: false, drums: true, bass: true }
+};
+const MUS = { cur: null, track: null, gain: null, timer: null, swap: null, next: 0, step: 0, noise: null };
+const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+function musVol() { return settings.bgm / 100 * .22; }
+function musGain() {
+  const a = audio(); if (!a) return null;
+  if (!MUS.gain) { MUS.gain = a.createGain(); MUS.gain.gain.value = 0; MUS.gain.connect(a.destination); }
+  return MUS.gain;
+}
+function musNote(t, midi, dur, type, vol, dest) {
+  const a = AC, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = midiHz(midi);
+  g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + .025); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + dur + .05);
+}
+function musKick(t, dest) {
+  const a = AC, o = a.createOscillator(), g = a.createGain();
+  o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + .12);
+  g.gain.setValueAtTime(.8, t); g.gain.exponentialRampToValueAtTime(.0001, t + .18);
+  o.connect(g).connect(dest); o.start(t); o.stop(t + .2);
+}
+function musHat(t, dest) {
+  const a = AC;
+  if (!MUS.noise) { const b = a.createBuffer(1, a.sampleRate * .1 | 0, a.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; MUS.noise = b; }
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = MUS.noise; f.type = 'highpass'; f.frequency.value = 7000;
+  g.gain.setValueAtTime(.22, t); g.gain.exponentialRampToValueAtTime(.0001, t + .05);
+  src.connect(f).connect(g).connect(dest); src.start(t); src.stop(t + .06);
+}
+function musTick() {
+  const T = MUS.track; if (!T || !AC) return;
+  const dest = musGain(); if (!dest) return;
+  const sd = 60 / T.bpm / 2;   // 8분음표 한 칸
+  while (MUS.next < AC.currentTime + .15) {
+    const s = MUS.step % 8, ch = T.chords[Math.floor(MUS.step / 8) % T.chords.length], t = MUS.next;
+    if (s === 0 && T.pad) ch.forEach(n => musNote(t, n - 12, sd * 8 * 1.1, 'sine', .05, dest));
+    musNote(t, ch[T.pat[s]] + 12, sd * 1.8, T.lead, T.leadVol, dest);
+    if (T.bass && s % 2 === 0) musNote(t, ch[0] - 24, sd * 1.9, 'sawtooth', .045, dest);
+    if (T.drums) { if (s % 4 === 0) musKick(t, dest); if (s % 2 === 1) musHat(t, dest); }
+    MUS.next += sd; MUS.step++;
+  }
+}
+function setTrack(name) {   // 'field' | 'battle' | null, 부드럽게 바꿔요
+  if (MUS.cur === name) return; MUS.cur = name;
+  const a = audio(); if (!a) return;   // 아직 소리가 허용되지 않았으면 조용히 기다려요
+  const g = musGain(); if (!g) return;
+  g.gain.cancelScheduledValues(a.currentTime); g.gain.setTargetAtTime(0, a.currentTime, .08);
+  clearTimeout(MUS.swap);
+  MUS.swap = setTimeout(() => {
+    MUS.track = name ? TRACKS[name] : null; MUS.step = 0; MUS.next = AC.currentTime + .1;
+    g.gain.setTargetAtTime(name ? musVol() : 0, AC.currentTime, .3);
+  }, 350);
+  if (!MUS.timer) MUS.timer = setInterval(musTick, 40);
+}
+function applyMusicVol() { const a = AC, g = MUS.gain; if (g && a && MUS.track) g.gain.setTargetAtTime(musVol(), a.currentTime, .1); }
+
 /* ================= 사운드 · 진동 ================= */
 let AC = null;
 function audio() {
@@ -368,7 +431,7 @@ function tone(freq, dur, type, vol, slide, delay) {
   o.type = type || 'sine';
   o.frequency.setValueAtTime(freq, t0);
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, slide), t0 + dur);
-  g.gain.setValueAtTime(vol, t0);
+  g.gain.setValueAtTime(vol * (settings.sfxVol / 100), t0);
   g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
   o.connect(g).connect(a.destination);
   o.start(t0); o.stop(t0 + dur + .03);
@@ -3474,3 +3537,43 @@ function tick(now) {
   requestAnimationFrame(frame);
   if (!creatureProto) toast('기본 인형으로 표시해요.');
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
+
+/* ================= 설정 · 업데이트 확인 ================= */
+const APP_VERSION = '2026.11.21.4';
+const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
+function checkUpdate() {
+  const msg = document.getElementById('updMsg'); if (!msg) return;
+  msg.textContent = '업데이트를 확인하는 중...';
+  fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => {
+      if (j.version === APP_VERSION) msg.textContent = '✅ 최신 버전이에요 (' + APP_VERSION + ')';
+      else msg.innerHTML = '🆕 새 버전 ' + j.version + ' 이 있어요. ' + (j.note || '') + '<br>웹은 새로고침, 앱은 새 APK를 설치해 주세요.';
+    })
+    .catch(() => { msg.textContent = '⚠ 업데이트 정보를 가져오지 못했어요. 인터넷 연결을 확인해 주세요.'; });
+}
+function setupSettings() {
+  const $$ = id => document.getElementById(id);
+  const modal = $$('setModal'); if (!modal) return;
+  const sync = () => {
+    $$('bgmVol').value = settings.bgm; $$('sfxVol').value = settings.sfxVol;
+    $$('bgmVal').textContent = settings.bgm + '%'; $$('sfxVal').textContent = settings.sfxVol + '%';
+    $$('bSetSound').textContent = settings.sfx ? '🔊 효과음 켬' : '🔇 효과음 끔';
+    $$('bSetVib').textContent = settings.vib ? '📳 진동 켬' : '📴 진동 끔';
+    $$('verTxt').textContent = APP_VERSION;
+  };
+  $$('bSettings').onclick = () => { sync(); modal.classList.add('show'); audio(); };
+  $$('bSetClose').onclick = () => modal.classList.remove('show');
+  $$('bgmVol').oninput = e => { settings.bgm = +e.target.value; saveSettings(); sync(); applyMusicVol(); };
+  $$('sfxVol').oninput = e => { settings.sfxVol = +e.target.value; saveSettings(); sync(); };
+  $$('sfxVol').onchange = () => sfx('place');
+  $$('bSetSound').onclick = () => { settings.sfx = !settings.sfx; saveSettings(); sync(); if (settings.sfx) sfx('place'); };
+  $$('bSetVib').onclick = () => { settings.vib = !settings.vib; saveSettings(); sync(); if (settings.vib) vib('place'); };
+  $$('bUpdate').onclick = checkUpdate;
+  // 소리는 사용자가 처음 누를 때부터 나와요 (브라우저 규칙)
+  const unlock = () => { audio(); if (AC && AC.state === 'running') document.removeEventListener('pointerdown', unlock); };
+  document.addEventListener('pointerdown', unlock);
+  // 몬스터가 살아 있으면 전투 곡, 아니면 잔잔한 곡
+  setInterval(() => { setTrack(mons.some(m => !m.dead) ? 'battle' : 'field'); }, 500);
+}
+setupSettings();

@@ -251,6 +251,9 @@ button{font-family:inherit;cursor:pointer}
         <input id="joinCode" inputmode="numeric" maxlength="6" placeholder="초대 코드 6자리 (예: 123412)" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:14px;border:2px solid var(--line);font-weight:800;text-transform:uppercase">
         <button class="btn" id="bJoin">🔗 참가</button>
       </div>
+      <div class="row">
+        <button class="btn" id="bSettings">⚙ 설정</button>
+      </div>
       <div class="note">👥 함께하기를 누르면 초대 링크가 복사돼요. 같은 링크로 들어온 친구와 한 마을을 지킬 수 있어요(최대 4명). 저장은 이 기기에 돼요.</div>
     </div>
   </section>
@@ -331,6 +334,17 @@ button{font-family:inherit;cursor:pointer}
   <div id="dialog"><span class="tag">촌장님</span><div id="line"></div><div style="text-align:right"><button class="btn" id="bNext">다음 ▶</button></div></div>
 
   <!-- 레벨업 -->
+  <div class="modal" id="setModal"><div class="card" style="max-width:340px">
+    <h3 style="margin:0 0 10px">⚙ 설정</h3>
+    <label>🎵 배경음악 <span id="bgmVal"></span></label>
+    <input type="range" id="bgmVol" min="0" max="100" step="5" style="width:100%">
+    <label>🔊 효과음 크기 <span id="sfxVal"></span></label>
+    <input type="range" id="sfxVol" min="0" max="100" step="5" style="width:100%">
+    <div class="row"><button class="btn" id="bSetSound">효과음 켬/끔</button><button class="btn" id="bSetVib">진동 켬/끔</button></div>
+    <div class="row"><button class="btn leaf" id="bUpdate">🔄 업데이트 확인</button></div>
+    <div id="updMsg" class="story" style="font-size:13px">현재 버전: <span id="verTxt"></span></div>
+    <div class="row"><button class="btn primary" id="bSetClose">닫기</button></div>
+  </div></div>
   <div class="modal" id="lvlModal"><div class="card" id="lvlCard">
     <h3>⭐ 레벨 <span id="lvlNew">2</span>!</h3>
     <div style="opacity:.8">하나를 골라 더 강해지세요.</div>
