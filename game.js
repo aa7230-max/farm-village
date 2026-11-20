@@ -31,12 +31,16 @@ const BUILD = {
   LAMP:  { wood: 1, stone: 1, name: '전등', hp: 10 },
   TRAP:  { wood: 2, stone: 2, name: '가시 덫', hp: 10 }
 };
+const MODEL3D = {}, BODY = {};   // 3D 적(늑대·드래곤) / 캐릭터 몸(고양이·돼지)
+const BODY_DEF = [{ id: 'cat', ic: '🐱', name: '고양이', need: 0 }, { id: 'pig', ic: '🐷', name: '돼지', need: 2 }];   // need: 해제 레벨
 const MON = {
   skeleton:   { unlock: 1, hp: 4, spd: 1.35, rng: 0, sc: 3.1, dmg: 7, xp: 1, w: 35 },
   goblin:     { unlock: 2, hp: 3, spd: 2.25, rng: 0, sc: 2.7, dmg: 5, xp: 1, w: 25 },
   mushroom:   { unlock: 3, hp: 5, spd: 1.0,  rng: 4.2, sc: 2.9, dmg: 4, xp: 2, w: 18, proj: 'mushroom', cool: 1.9 },
   flying_eye: { unlock: 4, hp: 4, spd: 1.5,  rng: 4.8, sc: 3.0, dmg: 4, xp: 2, w: 18, proj: 'flying_eye', cool: 1.7, fly: 2.2 },
-  sky_bat:    { unlock: 3, hp: 3, spd: 2.5,  rng: 0, sc: 2.6, dmg: 5, xp: 2, w: 16, fly: 3.4, sprite: 'flying_eye', tint: [.7, .92, 1.3] }
+  sky_bat:    { unlock: 3, hp: 3, spd: 2.5,  rng: 0, sc: 2.6, dmg: 5, xp: 2, w: 16, fly: 3.4, sprite: 'flying_eye', tint: [.7, .92, 1.3] },
+  wolf:       { unlock: 2, hp: 1, spd: 2.2,  rng: 0, sc: 2.6, dmg: 6, xp: 2, w: 14, model: 'wolf', walk: 'Walking' },
+  dragon:     { unlock: 5, hp: 1, spd: 1.3,  rng: 0, sc: 4.2, dmg: 12, xp: 5, w: 6, model: 'dragon', walk: 'Dragon_Flying', atk: 'Dragon_Attack', hit: 'Dragon_Hit', death: 'Dragon_Death', fly: 2.2 }
 };
 const BOSS = {
   skeleton_king:  { name: '해골 대왕',   sprite: 'skeleton', sc: 4.0, hp: 60,  spd: .95, dmg: 12, xp: 12, ring: true },
@@ -332,6 +336,24 @@ function persistRun() {
 function loadRun() { try { return JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); } catch (e) { return null; } }
 function loadProfile() { try { Object.assign(profile, JSON.parse(localStorage.getItem(PROF_KEY) || '{}')); } catch (e) { } }
 function saveProfile() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profile)); } catch (e) { } }
+function bodyUnlocked(id) { const def = BODY_DEF.find(b => b.id === id); return !!def && (def.need === 0 || (profile.bodies || []).includes(id)); }
+function unlockBody(id, label) {
+  if (bodyUnlocked(id)) return;
+  profile.bodies = (profile.bodies || []).concat([id]); saveProfile(); toast(label + ' 해금! 로비에서 골라요');
+}
+function renderBodyPick() {   // 로비에서 캐릭터 몸(고양이·돼지) 고르기
+  const box = document.getElementById('bodyPick'); if (!box) return;
+  box.innerHTML = '';
+  for (const b of BODY_DEF) {
+    const ok = bodyUnlocked(b.id) && !!BODY[b.id];
+    const btn = document.createElement('button');
+    btn.className = 'cbtn' + ((profile.body || 'cat') === b.id && ok ? ' on' : '');
+    btn.innerHTML = `<span class="i">${ok ? b.ic : '🔒'}</span>${b.name}<small>${ok ? '선택 가능' : 'Lv ' + b.need + ' 달성하면 해제'}</small>`;
+    btn.disabled = !ok;
+    btn.onclick = () => { profile.body = b.id; saveProfile(); renderBodyPick(); };
+    box.appendChild(btn);
+  }
+}
 function loadSettings() { try { Object.assign(settings, JSON.parse(localStorage.getItem(SET_KEY) || '{}')); } catch (e) { } }
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) { } }
 
@@ -437,7 +459,24 @@ function dropBase(root) {
   drop.forEach(o => o.parent && o.parent.remove(o));
   return root;
 }
+function loadGLBUrl(url) {
+  return fetch(url).then(r => { if (!r.ok) throw new Error(url + ' ' + r.status); return r.arrayBuffer(); })
+    .then(buf => new Promise((res, rej) => new THREE.GLTFLoader().parse(buf, '', res, rej)));
+}
+async function loadAnimalModels() {   // 구름 앱의 3D 동물: 돼지(몸), 늑대·드래곤(적)
+  const jobs = [
+    loadGLBUrl('assets/animals/pig.glb').then(g => {
+      const p = fitTo(g.scene, 1.15);
+      p.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
+      BODY.pig = p;
+    }),
+    loadGLBUrl('assets/animals/wolf.glb').then(g => { MODEL3D.wolf = { obj: fitTo(g.scene, 1), clips: g.animations }; }),
+    loadGLBUrl('assets/animals/dragon.glb').then(g => { MODEL3D.dragon = { obj: fitTo(g.scene, 1), clips: g.animations }; })
+  ];
+  await Promise.all(jobs.map(p => p.catch(e => showErr('animal ' + (e.message || e)))));
+}
 async function loadModels() {
+  await loadAnimalModels();
   const VIL_SIZE = { house_a: 2.5, house_b: 2.5, torii: 2.6, lamp: 2.2, fountain: 1.5, bamboo: 2.4, rock: 1.1 };
   if (window.VILLAGE_GLB && THREE.GLTFLoader) {
     await Promise.all(Object.keys(VIL_SIZE).filter(k => window.VILLAGE_GLB[k]).map(k =>
@@ -450,7 +489,7 @@ async function loadModels() {
   if (window.CAT_GLB) {
     try {
       const cat = await parseGLB(window.CAT_GLB);
-      creatureProto = fitTo(cat, 1.15);
+      creatureProto = fitTo(cat, 1.15); BODY.cat = creatureProto;
       creatureProto.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
     } catch (e) { showErr('cat ' + (e.message || e)); creatureProto = null; }
   }
@@ -715,7 +754,8 @@ function makePlayer() {
   if (player) scene.remove(player);
   player = new THREE.Group();
   playerModel = new THREE.Group();
-  const body = (creatureProto && THREE.SkeletonUtils) ? THREE.SkeletonUtils.clone(creatureProto) : fallbackChar();
+  const pr = BODY[profile.body || 'cat'] || creatureProto;
+  const body = (pr && THREE.SkeletonUtils) ? THREE.SkeletonUtils.clone(pr) : fallbackChar();
   playerModel.add(body);
   playerModel.add(gear(profile.cls));
   if (profile.cls === 'archer' && antlersProto) { const an = antlersProto.clone(); an.position.set(0, 1.3, 0); playerModel.add(an); }
@@ -893,7 +933,7 @@ function hitStop(sec) { hitstop = Math.max(hitstop, sec); }
 /* ================= 몬스터 · 보스 ================= */
 function pickKind() {
   const dayE = G.endless ? Math.max(G.day, Math.ceil((G.wave || 1) / 2)) : G.day;
-  const ks = Object.keys(MON).filter(k => MON[k].unlock <= dayE);
+  const ks = Object.keys(MON).filter(k => MON[k].unlock <= dayE && (!MON[k].model || MODEL3D[MON[k].model]));
   const kw = k => MON[k].w * (MON[k].fly ? 1 + Math.max(0, dayE - 2) * .5 : 1);
   const tot = ks.reduce((s, k) => s + kw(k), 0); let r = Math.random() * tot;
   for (const k of ks) { r -= kw(k); if (r <= 0) return k; }
@@ -914,6 +954,7 @@ function spritePadFrac(k) {   // 그림 맨 아래 투명 여백 비율 (발이 
 }
 function makeMon(kind, x, z, opts) {
   const d = opts && opts.boss ? BOSS[kind] : MON[kind];
+  if (d.model && !(opts && opts.boss)) return makeMon3D(kind, x, z, d);
   const skey = opts && opts.boss ? d.sprite : (d.sprite || kind);
   const sp = SPR[skey];
   if (!sp || !sp.move) return null;
@@ -934,12 +975,44 @@ function makeMon(kind, x, z, opts) {
   setAnim(m, 'move', true);
   return m;
 }
+function makeMon3D(kind, x, z, d) {
+  const P = MODEL3D[d.model]; if (!P) return null;
+  const root = THREE.SkeletonUtils.clone(P.obj);
+  root.scale.setScalar(d.sc);
+  const obj = new THREE.Group(); obj.add(root);
+  obj.position.set(x, d.fly || 0, z); world.add(obj);
+  const shadow = new THREE.Mesh(blobGeo, blobMat); shadow.rotation.x = -Math.PI / 2; shadow.scale.setScalar(d.sc * .55); shadow.position.set(x, .02, z); world.add(shadow);
+  const find = n => n && P.clips.find(c => c.name.split('|').pop() === n);
+  const clips = { walk: find(d.walk), atk: find(d.atk), hit: find(d.hit), death: find(d.death) };
+  const m = { kind, boss: false, d, obj, shadow, padY: 0, A: null, mx: new THREE.AnimationMixer(root), clips, clipNow: null, cur: null, loop: false, at: 0, done: false, face: 1,
+    hp: 1, hpMax: 1, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
+    fly: d.fly || 0, ph: rnd(0, 6), kx: 0, kz: 0, flash: 0, touchCd: 0, ringCd: 2.4, texs: [] };
+  setAnim(m, 'move', true);
+  return m;
+}
+function set3DClip(m, name) {
+  const c = m.clips, want = name === 'atk' ? (c.atk || c.walk) : name === 'hit' ? (c.hit || c.walk) : name === 'death' ? c.death : c.walk;
+  if (!m.mx || !want || m.clipNow === want) return;
+  const act = m.mx.clipAction(want); act.reset(); act.setLoop(m.loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity); act.clampWhenFinished = true; act.fadeIn(.15).play();
+  if (m.clipNow) m.mx.clipAction(m.clipNow).fadeOut(.15);
+  m.clipNow = want;
+}
 function setAnim(m, name, loop) {
+  if (m.A === null) {   // 3D 몬스터는 애니메이션 클립으로 움직여요
+    if (m.cur === name && m.loop === loop) return;
+    m.cur = name; m.loop = loop; m.at = 0; m.done = false; set3DClip(m, name); return;
+  }
   if (m.cur === name && m.loop === loop) return;
   m.cur = name; m.loop = loop; m.at = 0; m.done = false;
   m.obj.material.map = m.A[name]; m.obj.material.needsUpdate = true;
 }
 function stepAnim(m, dt) {
+  if (m.A === null) {
+    m.at += dt; if (m.mx) m.mx.update(dt);
+    if (m.cur === 'death') { m.obj.rotation.z = Math.min(Math.PI / 2, m.at * 2.5); if (m.at > 1) m.done = true; }
+    else { m.obj.rotation.y = m.face > 0 ? Math.PI / 2 : -Math.PI / 2; if (!m.loop && m.at > .5) m.done = true; }
+    return;
+  }
   const tx = m.A[m.cur], n = tx.frames;
   m.at += dt; let f = Math.floor(m.at * 9);
   if (m.loop) f = f % n; else if (f >= n) { f = n - 1; m.done = true; }
@@ -947,7 +1020,7 @@ function stepAnim(m, dt) {
   tx.repeat.x = m.face > 0 ? 1 / n : -1 / n;
 }
 function removeMon(m) {
-  world.remove(m.obj); m.obj.material.dispose(); world.remove(m.shadow);
+  world.remove(m.obj); if (m.obj.material) m.obj.material.dispose(); if (m.mx) m.mx.stopAllAction(); world.remove(m.shadow);
   if (m.texs) { m.texs.forEach(t => t.dispose()); m.texs = null; }
   const i = mons.indexOf(m); if (i >= 0) mons.splice(i, 1);
   if (m.boss && bossRef === m) { bossRef = null; $('bossBar').style.display = 'none'; }
@@ -1334,10 +1407,10 @@ function updMon(m, dt) {
   if (!isFinite(o.position.x) || !isFinite(o.position.z)) { removeMon(m); return; }
   m.flash = Math.max(0, m.flash - dt);
   if (m.slow > 0) m.slow -= dt;
-  const tn = m.d.tint || [1.14, 1.08, 1.08]; o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
+  const tn = m.d.tint || [1.14, 1.08, 1.08]; if (o.material) o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
   // 넉백 감쇠
   if (Math.abs(m.kx) + Math.abs(m.kz) > .001) { o.position.x += m.kx * dt * 4; o.position.z += m.kz * dt * 4; m.kx *= Math.pow(.02, dt); m.kz *= Math.pow(.02, dt); }
-  o.center.set(.5, 0); o.position.y = (m.fly ? m.fly : .09) - (m.padY || 0); m.shadow.position.set(o.position.x, .02, o.position.z);   // 발이 땅에 붙도록 기준점을 아래로   // 날개 있는 몬스터만 떠 있어요
+  if (o.center) o.center.set(.5, 0); o.position.y = (m.fly ? m.fly : .09) - (m.padY || 0); m.shadow.position.set(o.position.x, .02, o.position.z);   // 발이 땅에 붙도록 기준점을 아래로   // 날개 있는 몬스터만 떠 있어요
   if (m.dead) { stepAnim(m, dt); if (m.done) removeMon(m); return; }
   const x = o.position.x, z = o.position.z;
   m.ph += dt;
@@ -2122,7 +2195,7 @@ function levelFx(lvl) {
 }
 function gainXp(v) {
   G.xp += v;
-  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); mapExpand(); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
+  while (G.xp >= G.need) { G.xp -= G.need; G.lvl += 1; G.need = 5 + G.lvl * 4; G.pendingLvl += 1; levelFx(G.lvl); mapExpand(); if (G.lvl === 2) unlockBody('pig', '🐷 돼지'); if (G.lvl === 5) G.promoDue = true; if (G.lvl === 10) G.promo2Due = true; }
 }
 function levelChoices() {
   if (G.promoDue && !G.promo && PROMO[G.cls]) return { forced: true, list: [Object.assign({ kind: 'promo', key: 'a' }, PROMO[G.cls].a), Object.assign({ kind: 'promo', key: 'b' }, PROMO[G.cls].b)] };
@@ -3392,7 +3465,7 @@ function tick(now) {
   if (netPending) enterWaiting();           // 초대 링크로 들어오면 대기 화면에서 방장이 들여보내기를 기다려요
   const hasRun = !!loadRun();
   $('bContinue').disabled = !hasRun;
-  document.querySelectorAll('#classPick .cbtn').forEach(x => x.classList.toggle('on', x.dataset.c === profile.cls));
+  document.querySelectorAll('#classPick .cbtn').forEach(x => x.classList.toggle('on', x.dataset.c === profile.cls)); renderBodyPick();
   last = performance.now();
   requestAnimationFrame(frame);
   if (!creatureProto) toast('기본 인형으로 표시해요.');
