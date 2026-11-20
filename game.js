@@ -1559,26 +1559,36 @@ function screenToGround(cx, cy) {   // 화면 좌표 → 땅 위의 점
   const hp = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hp) ? { x: hp.x, z: hp.z } : null;
 }
 function chargeStart(assist) { chargeOn = !modalOpen && mode === 'FIELD' && !buildMode; chargeAssist = !!assist; holdStart = performance.now(); aimOverride = null; chargeMoved = false; }
-function lineShot(dx, dz, held) {   // 직선 공격: 곧게 나가서 처음 맞는 적이 쓰러져요
-  const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
-  const range = CLS[G.cls].rng * 1.8 + 4, pw = 1 + Math.min(held, 2) * 1.2;
-  let best = null, bt = 1e9;
+function lineShot(held) {   // 왼쪽 버튼: 조준점(화면 가운데, 또는 끈 방향)을 그대로 따라 곧게 나가요. 공중 몬스터도 맞아요
+  const cam = aimRay(), pw = 1 + Math.min(held, 2) * 1.2, range = CLS[G.cls].rng * 1.8 + 4;
+  const mz = muzzle();
+  let o = cam.o, dir = cam.d.clone();
+  if (aimOverride) {   // 끌어서 정한 방향: 가로 방향은 끈 쪽, 세로는 시선 기준
+    const hx = aimOverride.x - px, hz = aimOverride.z - pz, L = Math.hypot(hx, hz) || 1;
+    dir = new THREE.Vector3(hx / L, dir.y, hz / L).normalize(); o = mz;
+  }
+  const fx = dir.x, fz = dir.z, FL = Math.hypot(fx, fz) || 1;
+  let best = null, bt = 1e9, bc = null;
+  const c = new THREE.Vector3(), v = new THREE.Vector3();
   for (const m of mons) {
     if (m.dead || !m.obj) continue;
-    const vx = m.obj.position.x - px, vz = m.obj.position.z - pz, t = vx * dx + vz * dz;
-    if (t < 0 || t > range || t >= bt) continue;
-    const perp = Math.hypot(vx - dx * t, vz - dz * t), width = .7 + Math.min(.6, t * .08);   // 멀수록 조금 넓게
-    const ang = Math.atan2(perp, Math.max(.01, t));   // 조준 방향과 적이 이루는 각도
-    if ((perp < width || ang < .18) && t < bt) { bt = t; best = m; }   // 자석: 약 10도 안이면 그 적을 맞춰요
+    const hx = m.obj.position.x - px, hz = m.obj.position.z - pz;
+    if (Math.hypot(hx, hz) < .6) continue;                      // 내 몸 옆은 제외
+    if ((hx * fx + hz * fz) / (Math.hypot(hx, hz) * FL) < .2) continue;   // 앞쪽만
+    c.set(m.obj.position.x, m.fly ? m.fly + .6 : .9, m.obj.position.z);
+    v.copy(c).sub(o);
+    const t = v.dot(dir);
+    if (t < .2 || t > range + 12 || t >= bt) continue;
+    const perp = v.clone().addScaledVector(dir, -t).length();
+    if (perp < .7) { bt = t; best = m; bc = c.clone(); }
   }
-  const endT = best ? bt : range, tp = { x: px + dx * endT, z: pz + dz * endT };
-  const mz = muzzle();
-  sendFx(0, mz, tp);
-  throwOrb(mz, new THREE.Vector3(tp.x, best ? 1.0 : .6, tp.z), held > 1 ? 1 : 0, () => {
+  const end = best ? bc : mz.clone().addScaledVector(dir, range);
+  sendFx(0, mz, { x: end.x, z: end.z });
+  throwOrb(mz, end, held > 1 ? 1 : 0, () => {
     if (best && !best.dead) hitEnemy(best, best.boss ? baseHit(best) * pw : 9999, { kb: .6 });
-    breakNodesAt(tp.x, tp.z, 1.1);
-    scorchAt(tp.x, tp.z, .35);
-    puff(tp.x, tp.z, 4, 0x3a2a1a);
+    breakNodesAt(end.x, end.z, 1.1);
+    scorchAt(end.x, end.z, .35);
+    puff(end.x, end.z, 4, 0x3a2a1a);
   }, G.cls, true);
 }
 function chargeRelease(assist) {
@@ -1587,9 +1597,7 @@ function chargeRelease(assist) {
   if (mode !== 'FIELD' || modalOpen || buildMode) { aimOverride = null; return; }
   if (sniper) { fireSniper(); return; }
   if (chargeEl && chargeEl.id === 'bPadAtk') {   // 왼쪽 버튼: 조준한 방향으로 곧게 쏴요
-    let dx, dz;
-    if (aimOverride) { dx = aimOverride.x - px; dz = aimOverride.z - pz; } else { const f = camFwd(); dx = f.x; dz = f.z; }
-    lineShot(dx, dz, held); aimOverride = null; chargeEl = null; return;
+    lineShot(held); aimOverride = null; chargeEl = null; return;
   }
   if (aimOverride) { const lv = Math.min(Math.max(held, .3), 2.5); chargedZap(lv); aimOverride = null; return; }   // 드래그한 자리에 떨어뜨려요
   if (assist || chargeAssist) assistAim();
