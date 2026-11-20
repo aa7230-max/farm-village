@@ -1794,10 +1794,12 @@ function useSkill() {
   if (G.cls === 'archer') fireArrowRain(); else if (G.cls === 'warrior') tailSweep(); else meteorStrike();
 }
 // 운석 낙하: 불타는 돌이 하늘에서 떨어져 주변을 쓸어요. 맞은 적은 크게 다쳐요
+let meteorZone = null;
 function meteorStrike() {
   if (mode !== 'FIELD' || modalOpen) return;
   const k = skillDmgMul(), R = 6.5 + G.skillLv * .6, N = 9 + G.skillLv * 2, dmg = (6 + G.skillLv * 1.5) * k;
   const cx = px, cz = pz;
+  meteorZone = { x: cx, z: cz, R, until: performance.now() + 2600 };
   const warn = new THREE.Mesh(new THREE.RingGeometry(R - .15, R, 64), new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
   warn.rotation.x = -Math.PI / 2; warn.position.set(cx, .07, cz); scene.add(warn);
   tweenTo(.75, .3, 1.4, v => { warn.material.opacity = v; }, 'out', 0, () => { scene.remove(warn); warn.material.dispose(); warn.geometry.dispose(); });
@@ -1811,8 +1813,8 @@ function meteorStrike() {
   persistRun();
 }
 function dropMeteor(x, z, dmg) {   // 불붙은 돌이 하늘에서 떨어져요
-  const geo = new THREE.DodecahedronGeometry(.42, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6b5a48, emissive: 0xff5a1f, emissiveIntensity: 1.3, flatShading: true });
+  const geo = new THREE.DodecahedronGeometry(.2, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, emissive: 0xff6a2a, emissiveIntensity: 1.6, flatShading: true });
   const m = new THREE.Mesh(geo, mat); m.position.set(x, 16, z); m.castShadow = true; scene.add(m);
   tweenTo(16, .4, .6, v => {
     m.position.y = v; m.rotation.x += .25; m.rotation.z += .18;
@@ -1837,7 +1839,7 @@ function impactMeteor(x, z, dmg) {
   let hits = 0;
   mons.slice().forEach(m => {
     if (m.dead) return;
-    if (Math.hypot(m.obj.position.x - x, m.obj.position.z - z) < 2.2) { hitEnemy(m, dmg * (m.boss ? 1 : 1.5), { kb: 1.8 }); hits++; }
+    if (Math.hypot(m.obj.position.x - x, m.obj.position.z - z) < 2.2) { hitEnemy(m, m.boss ? dmg : 9999, { kb: 1.8 }); hits++; }
   });
   breakNodesAt(x, z, 2.2);
   if (hits) toast('☄ 운석에 맞은 적 ' + hits + '마리!');
@@ -2978,7 +2980,7 @@ function fireSniper() {
   bolt([new THREE.Vector3(px, py + 1.7, pz), end], 0x9ff3ff);
   hitFx(.2);
   if (t) {
-    const dmg = (6 + G.skillLv * 2 + (G.day || 1) * 1.5) * skillDmgMul() * bossDmgMul(t);
+    const dmg = t.boss ? (6 + G.skillLv * 2 + (G.day || 1) * 1.5) * skillDmgMul() * bossDmgMul(t) : 9999;   // 일반 적은 한 발에 쓰러져요
     hitEnemy(t, dmg, { kb: .4, slow: 1.4 });
     glowAt(end.x, 1, end.z, 1.8, 0x9ff3ff, .3); fxBurst(end.x, 1, end.z, FX_CFG.spark.sniperSize); puff(end.x, end.z, 5, 0xbff7ff);
   }
@@ -3078,6 +3080,12 @@ function tick(now) {
     atkCd -= dt;
     if (atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode) { if (attackNow(false)) atkCd = .7 / rateMul() / CLS[G.cls].rate; else atkCd = .15; }
     updateChargeRing(); syncHitGrip();
+    if (meteorZone && performance.now() < meteorZone.until) {
+      for (const m of mons) {
+        if (m.dead || !m.fly || !m.obj) continue;
+        if (Math.hypot(m.obj.position.x - meteorZone.x, m.obj.position.z - meteorZone.z) <= meteorZone.R) hitEnemy(m, 9999, { kb: 0 });
+      }
+    }
     if (attackHeld && atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode && !sniper) { attackNow(true); atkCd = .2 / rateMul() / CLS[G.cls].rate; }
     if (skillCd > 0) skillCd -= dt;
     for (const k in xCd) if (xCd[k] > 0) xCd[k] -= dt;
