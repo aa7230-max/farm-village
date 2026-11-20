@@ -446,8 +446,16 @@ async function loadModels() {
   }
   try { const mj = loadFBX(window.HINYO_FBX); if (mj) mayorProto = fitTo(mj, 1.6); } catch (e) { showErr('mayor ' + e.message); }
   try { const an = loadFBX(window.ANTLERS_FBX); if (an) antlersProto = fitTo(an, .9); } catch (e) { showErr('antlers ' + e.message); }
+  // 구름 앱의 3D 고양이(Quaternius)를 캐릭터 몸으로 써요. 실패하면 예전 FBX 몸을 그대로 써요.
+  if (window.CAT_GLB) {
+    try {
+      const cat = await parseGLB(window.CAT_GLB);
+      creatureProto = fitTo(cat, 1.15);
+      creatureProto.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
+    } catch (e) { showErr('cat ' + (e.message || e)); creatureProto = null; }
+  }
   try {
-    const obj = loadFBX(window.PLAYER_FBX, 'assets/player_tex/');
+    const obj = creatureProto ? null : loadFBX(window.PLAYER_FBX, 'assets/player_tex/');
     if (obj) {
       creatureProto = fitTo(obj, 1.15);
       creatureProto.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) { m.side = THREE.DoubleSide; m.alphaTest = 0; m.transparent = false; } }); });
