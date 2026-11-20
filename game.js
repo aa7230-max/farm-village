@@ -637,20 +637,20 @@ function fallbackChar() {
 function gear(cls) {
   const g = new THREE.Group(); const std = c => new THREE.MeshLambertMaterial({ color: c });
   if (cls === 'mage') {
-    const hat = new THREE.Mesh(new THREE.ConeGeometry(.34, .85, 12), std(0x4b3f9e)); hat.position.y = 1.42;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .06, 14), std(0x4b3f9e)); brim.position.y = 1.0;
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(.34, .85, 12), std(0x4b3f9e)); hat.position.y = 1.42; hat.userData.hat = true;
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .06, 14), std(0x4b3f9e)); brim.position.y = 1.0; brim.userData.hat = true;
     const star = new THREE.Mesh(new THREE.OctahedronGeometry(.07), new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xffb347, emissiveIntensity: .8 })); star.position.y = 1.9;
     const staff = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, 1.4, 6), std(0x7a5636)); staff.position.set(.5, .75, .12);
     const orb = new THREE.Mesh(new THREE.SphereGeometry(.1, 12, 10), new THREE.MeshStandardMaterial({ color: 0x9fe6ff, emissive: 0x6fd3ff, emissiveIntensity: 1.2 })); orb.position.set(.5, 1.5, .12);
     g.add(hat, brim, star, staff, orb);
   } else if (cls === 'archer') {
-    const hood = new THREE.Mesh(new THREE.SphereGeometry(.3, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), std(0x3f7d3a)); hood.position.y = 1.1;
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(.3, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), std(0x3f7d3a)); hood.position.y = 1.1; hood.userData.hat = true;
     const feather = new THREE.Mesh(new THREE.ConeGeometry(.07, .25, 6), std(0xffd166)); feather.position.set(-.18, 1.42, -.1); feather.rotation.z = .4;
     const bow = new THREE.Mesh(new THREE.TorusGeometry(.5, .03, 6, 16, Math.PI), std(0x8b5e3c)); bow.position.set(.5, .8, .12); bow.rotation.z = Math.PI / 2;
     const quiver = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .6, 8), std(0x6b4a2b)); quiver.position.set(-.3, .9, -.18); quiver.rotation.z = .3;
     g.add(hood, feather, bow, quiver);
   } else {
-    const helm = new THREE.Mesh(new THREE.SphereGeometry(.31, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), std(0xc9d3df)); helm.position.y = 1.12;
+    const helm = new THREE.Mesh(new THREE.SphereGeometry(.31, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), std(0xc9d3df)); helm.position.y = 1.12; helm.userData.hat = true;
     const plume = new THREE.Mesh(new THREE.ConeGeometry(.08, .35, 6), std(0xe05a4f)); plume.position.set(0, 1.45, 0);
     const blade = new THREE.Mesh(new THREE.BoxGeometry(.07, .85, .03), std(0xdfe6ee)); blade.position.set(.52, .75, .12);
     const hilt = new THREE.Mesh(new THREE.BoxGeometry(.2, .06, .06), std(0x8b5e3c)); hilt.position.set(.52, .32, .12);
@@ -677,6 +677,7 @@ function tintPlayer() {
     cur.forEach((m, i) => { if (m.color && base[i]) m.color.copy(base[i]).multiply(k); });
   });
   if (ring) ring.material.color.copy(pal);
+  paintHat(playerModel, pal);
 }
 function makePlayer() {
   if (player) scene.remove(player);
@@ -1019,15 +1020,23 @@ function makeRemote(id, p) {
   if (p.k === 'archer' && antlersProto) { const an = antlersProto.clone(); an.position.set(0, 1.3, 0); model.add(an); }
   g.add(model);
   tintObj(model, PAL_COL[(p.c | 0) % PAL_COL.length]);   // 같은 캐릭터, 색만 다르게
+  paintHat(model, PAL_COL[(p.c | 0) % PAL_COL.length]);   // 모자 색으로 구별
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
-  const cx = cv.getContext('2d'); cx.fillStyle = 'rgba(255,250,238,.92)'; cx.fillRect(0, 0, 256, 64);
-  cx.fillStyle = '#4a3424'; cx.font = 'bold 30px sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  const cx = cv.getContext('2d'); cx.fillStyle = '#' + PAL_COL[(p.c | 0) % PAL_COL.length].toString(16).padStart(6, '0'); cx.fillRect(0, 0, 256, 64);   // 이름표 색 = 친구 색
+  cx.fillStyle = '#2b1d12'; cx.font = 'bold 30px sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
   cx.fillText((p.n || '친구').slice(0, 10), 128, 34);
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false }));
   label.scale.set(1.8, .45, 1); label.position.y = 2.0;
   g.add(label);
   g.position.set(p.x, 0, p.z); world.add(g);
   return { g, tx: p.x, tz: p.z, rot: p.r || 0, seen: performance.now() };
+}
+function paintHat(root, hex) {   // 친구와 구별하려고 모자·투구 색을 바꿔요
+  root.traverse(o => {
+    if (!o.isMesh || !o.userData.hat || !o.material || !o.material.color) return;
+    if (!o.userData.ownMat) { o.material = o.material.clone(); o.userData.ownMat = true; }
+    o.material.color.set(hex);
+  });
 }
 function tintObj(root, hex) {   // 캐릭터 몸 색을 입혀요 (복제된 재질만 건드려요)
   const pal = new THREE.Color(hex), k = new THREE.Color(1, 1, 1).lerp(pal, .8);
