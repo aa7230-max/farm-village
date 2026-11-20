@@ -2780,19 +2780,24 @@ function nearPerch() {
   for (const k in G.b) { if (G.b[k].t !== 'APT') continue; const [x, z] = k.split(',').map(Number); const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = k; } }
   return best;
 }
+let hitMoved = false;
+function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어 다녀요 (옮기기 전까지)
+  const hb = $('bHit'), g = document.getElementById('hitGrip'); if (!hb || !g || hitMoved) return;
+  const r = hb.getBoundingClientRect(); g.style.display = r.width > 0 ? 'block' : 'none';
+  g.style.left = (r.right - 14) + 'px'; g.style.top = (r.top - 10) + 'px';
+}
 function setupHitGrip() {   // 공격 버튼만 손잡이(✥)로 끌어서 옮겨요. 다른 버튼은 제자리에 있어요
   const hb = $('bHit'); if (!hb) return;
   const g = document.createElement('div'); g.id = 'hitGrip'; g.textContent = '✥';
   g.style.cssText = 'position:fixed;z-index:7;width:24px;height:24px;border-radius:12px;background:rgba(255,250,238,.92);border:2px solid #ecd3a2;font-size:13px;font-weight:900;line-height:20px;text-align:center;touch-action:none;user-select:none;cursor:move';
   document.body.appendChild(g);
-  const place = (l, t) => { hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; g.style.left = (l + 22) + 'px'; g.style.top = (t - 12) + 'px'; };
-  let sv = null; try { sv = JSON.parse(localStorage.getItem('farm-hit-pos') || 'null'); } catch (e) {}
-  if (sv) place(clamp(sv.l, 0, innerWidth - 80), clamp(sv.t, 0, innerHeight - 80));
-  else { const r = hb.getBoundingClientRect(); place(r.left, r.top); }
+  const place = (l, t) => { hitMoved = true; hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; g.style.left = (l + 22) + 'px'; g.style.top = (t - 12) + 'px'; };
+  let sv = null; try { sv = JSON.parse(localStorage.getItem('farm-hit-pos2') || 'null'); } catch (e) {}
+  if (sv) { hitMoved = true; place(clamp(sv.l, 0, innerWidth - 80), clamp(sv.t, 0, innerHeight - 80)); }   // 옮긴 적이 있을 때만 위치를 고정해요
   let gid = null, ox = 0, oy = 0, L = 0, T = 0;
   g.addEventListener('pointerdown', e => { gid = e.pointerId; const r = hb.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; g.setPointerCapture && g.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
   g.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; L = clamp(e.clientX - ox, 0, innerWidth - 80); T = clamp(e.clientY - oy, 0, innerHeight - 80); place(L, T); });
-  const end = e => { if (e.pointerId !== gid) return; gid = null; try { localStorage.setItem('farm-hit-pos', JSON.stringify({ l: L || parseInt(hb.style.left, 10) || 0, t: T || parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
+  const end = e => { if (e.pointerId !== gid) return; gid = null; try { localStorage.setItem('farm-hit-pos2', JSON.stringify({ l: L || parseInt(hb.style.left, 10) || 0, t: T || parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
   g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
 }
 function setupActGrip() {
@@ -2960,7 +2965,7 @@ function tick(now) {
     updProjs(dt); stepParts(dt);
     atkCd -= dt;
     if (atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode) { if (attackNow(false)) atkCd = .7 / rateMul() / CLS[G.cls].rate; else atkCd = .15; }
-    updateChargeRing();
+    updateChargeRing(); syncHitGrip();
     if (attackHeld && atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode && !sniper) { attackNow(true); atkCd = .2 / rateMul() / CLS[G.cls].rate; }
     if (skillCd > 0) skillCd -= dt;
     for (const k in xCd) if (xCd[k] > 0) xCd[k] -= dt;
