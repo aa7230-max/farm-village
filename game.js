@@ -1567,7 +1567,9 @@ function lineShot(dx, dz, held) {   // 직선 공격: 곧게 나가서 처음 �
     if (m.dead || !m.obj) continue;
     const vx = m.obj.position.x - px, vz = m.obj.position.z - pz, t = vx * dx + vz * dz;
     if (t < 0 || t > range || t >= bt) continue;
-    if (Math.hypot(vx - dx * t, vz - dz * t) < .8) { bt = t; best = m; }
+    const perp = Math.hypot(vx - dx * t, vz - dz * t), width = .7 + Math.min(.6, t * .08);   // 멀수록 조금 넓게
+    const ang = Math.atan2(perp, Math.max(.01, t));   // 조준 방향과 적이 이루는 각도
+    if ((perp < width || ang < .18) && t < bt) { bt = t; best = m; }   // 자석: 약 10도 안이면 그 적을 맞춰요
   }
   const endT = best ? bt : range, tp = { x: px + dx * endT, z: pz + dz * endT };
   const mz = muzzle();
@@ -2266,7 +2268,8 @@ function setupInput() {
   { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
   [['bHit', 'A'], ['bSkill', 'S'], ['bBuild', 'D'], ['bGather', 'Z'], ['bTalk', 'X'], ['bSnipe', 'F']].forEach(([id, k]) => { $(id).dataset.key = k; });
   // 시선 회전 키 안내는 Q/E 입력 시 표시
-  $('bJump').onclick = doJump; setupHitGrip();
+  $('bJump').addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); doJump(); });
+  $('bJump').onclick = () => {}; setupHitGrip();
   $('bHit').title = '공격 (A)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
   $('bGather').title = '채집 (Z)'; $('bTalk').title = '대화/거래 (X)';
   // 화면 드래그로 카메라, 짧게 누르면 공격/건설
@@ -3072,7 +3075,7 @@ function tick(now) {
   if (!sniper) {
     const gh = groundAt(px, pz);
     if (jv !== 0 || py > gh + .01) { py += jv * dt; jv -= 24 * dt; if (py <= gh) { py = gh; jv = 0; } }   // 점프·낙하
-    else py = gh;
+    else { const d = gh - py; py += Math.sign(d) * Math.min(Math.abs(d), (d > 0 ? 7 : 14) * dt); }   // 계단은 부드럽게 올라가요
   }
   if (sniper) { const pc = perchKey && G.b[perchKey] ? perchKey.split(',').map(Number) : null; if (!pc) { sniper = false; perchKey = null; py = 0; toast('건물이 사라져서 지상으로 내려왔어요.'); } else { px = clamp(px, pc[0] - 1.3, pc[0] + 1.3); pz = clamp(pz, pc[1] - 1.3, pc[1] + 1.3); } }
   updateSniperAim(dt);
