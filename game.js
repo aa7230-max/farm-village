@@ -878,7 +878,7 @@ function makeMon(kind, x, z, opts) {
   const sc = d.sc * (opts && opts.boss ? 1 : 1.2);
   obj.center.set(.5, 0); obj.scale.set(sc, sc, 1); obj.position.set(x, d.fly || 0, z); world.add(obj);
   const shadow = new THREE.Mesh(blobGeo, blobMat); shadow.rotation.x = -Math.PI / 2; shadow.scale.setScalar(sc * .55); shadow.position.set(x, .02, z); world.add(shadow);
-  const hpMax = Math.round(d.hp * diffMul() * (opts && opts.boss ? (1 + (G.day - 5) * .18) : 1));
+  const hpMax = opts && opts.boss ? Math.round(d.hp * diffMul() * (1 + (G.day - 5) * .18)) : 1;
   const m = {
     kind, boss: !!(opts && opts.boss), d, obj, shadow, A, cur: null, loop: false, at: 0, done: false, face: 1,
     hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
@@ -1270,7 +1270,7 @@ function updMon(m, dt) {
   const tn = m.d.tint || [1.14, 1.08, 1.08]; o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
   // 넉백 감쇠
   if (Math.abs(m.kx) + Math.abs(m.kz) > .001) { o.position.x += m.kx * dt * 4; o.position.z += m.kz * dt * 4; m.kx *= Math.pow(.02, dt); m.kz *= Math.pow(.02, dt); }
-  o.position.y = m.fly ? m.fly : 0; m.shadow.position.set(o.position.x, .02, o.position.z);   // 날개 있는 몬스터만 떠 있어요
+  o.position.y = m.fly ? m.fly : .09; m.shadow.position.set(o.position.x, .02, o.position.z);   // 날개 있는 몬스터만 떠 있어요
   if (m.dead) { stepAnim(m, dt); if (m.done) removeMon(m); return; }
   const x = o.position.x, z = o.position.z;
   m.ph += dt;
@@ -1336,8 +1336,8 @@ function updMon(m, dt) {
     if (dd > 0) { o.position.x += dx / dd * sp; o.position.z += dz / dd * sp; }
     setAnim(m, 'move', true); stepAnim(m, dt);
   }
-  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12; else o.position.y = 0;   // 걷는 몬스터는 땅 위
-  if (!m.fly) { if (!Number.isFinite(o.position.y)) o.position.y = 0; }   // 오류 방지
+  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12; else o.position.y = .09;   // 걷는 몬스터는 땅 위
+  if (!Number.isFinite(o.position.y)) o.position.y = .09;   // 오류 방지
 }
 function hitEnemy(m, dmg, opt) {
   if (!m || m.dead) return;
