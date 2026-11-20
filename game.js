@@ -78,7 +78,7 @@ const RELICS = [
   { id: 'horn',   ic: '📯', t: '고대 뿔',     rar: 'epic', d: '보스 피해 +30%' }
 ];
 const STORY = {
-  0: ['촌장님: 여기는 작은 농장 마을이에요. 하늘에 떠 있는 중력보석이 이 세계를 붙잡고 있어요.', '촌장님: 그런데 해골 좀비 무리가 보석을 빼앗으려 해요. 보석을 잃으면 행성이 이 세계로 떨어져 내려요!', '모험가: 우리가 꼭 중력보석을 지켜야겠어요!'],
+  0: ['촌장님: 여기는 작은 농장 마을이에요. 마을 한가운데 수정 다이아몬드를 품은 신비한 나무가 있어요.', '촌장님: 이 나무가 이 세계를 땅에 붙잡고 있어요. 그런데 해골 좀비 무리가 다이아몬드를 빼앗으려 해요!', '촌장님: 나무가 쓰러지면 행성이 이 세계로 떨어져 내려요. 우리가 꼭 나무를 지켜야 해요!'],
   1: ['촌장님: 밤마다 그림자 떼가 몰려와요. 집 안의 보석을 꼭 지켜요.'],
   2: ['촌장님: 고블린 도둑이 나타났어요. 도망치는 도둑은 보석을 가져가요.'],
   3: ['촌장님: 독버섯 포자가 날아다녀요. 망루를 세우면 도움이 될 거예요.'],
@@ -107,14 +107,21 @@ let coreObj = null, coreRing = null, coreHalo = null, coreGem = null, coreHit = 
 function ensureCore() {
   if (coreObj || !scene) return;
   coreObj = new THREE.Group();
-  coreGem = new THREE.Mesh(new THREE.OctahedronGeometry(.95, 0), new THREE.MeshLambertMaterial({ color: 0xff5fd0, emissive: 0x9a1d66 }));
-  coreGem.position.y = 2.4; coreObj.add(coreGem);
+  // 수정 다이아몬드를 품은 나무: 나무 몸통 + 수관, 그 한가운데 다이아몬드가 박혀 있어요
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.55, .8, 3.2, 10), new THREE.MeshLambertMaterial({ color: 0x7a5a3a }));
+  trunk.position.y = 1.6; trunk.castShadow = true; coreObj.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 1), new THREE.MeshLambertMaterial({ color: 0x4f9a52, flatShading: true }));
+  crown.position.y = 4.2; crown.castShadow = true; coreObj.add(crown);
+  const root = new THREE.Mesh(new THREE.TorusGeometry(1.1, .12, 6, 16), new THREE.MeshLambertMaterial({ color: 0x5a4028 }));
+  root.rotation.x = -Math.PI / 2; root.position.y = .15; coreObj.add(root);
+  coreGem = new THREE.Mesh(new THREE.OctahedronGeometry(.8, 0), new THREE.MeshLambertMaterial({ color: 0xff5fd0, emissive: 0x9a1d66, flatShading: true }));
+  coreGem.position.set(0, 2.4, .6); coreObj.add(coreGem);   // 나무 줄기에 박힌 다이아몬드
   coreRing = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.2, 48), new THREE.MeshBasicMaterial({ color: 0xff8fe0, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false }));
   coreRing.rotation.x = -Math.PI / 2; coreRing.position.y = .06; coreObj.add(coreRing);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(.18, .18, 9, 8), new THREE.MeshBasicMaterial({ color: 0xffb3ec, transparent: true, opacity: .3, depthWrite: false }));
   beam.position.y = 4.5; coreObj.add(beam);
   coreHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxTex('ring'), color: 0xff8fe0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  coreHalo.scale.set(7, 7, 1); coreHalo.position.y = 2.4; coreObj.add(coreHalo);
+  coreHalo.scale.set(7, 7, 1); coreHalo.position.y = 2.4; coreHalo.position.z = .6; coreObj.add(coreHalo);
   scene.add(coreObj);
 }
 let crackGroup = null, lastCoreFx = 0;
@@ -2202,7 +2209,7 @@ function updateCycle(dt) {
   starMat.opacity = nf * .9;
   sunMesh.position.copy(sunPos.clone().normalize().multiplyScalar(120)); sunMesh.visible = sunUp > .05;
   moonMesh.position.copy(sunPos.clone().normalize().multiplyScalar(-120)); moonMesh.visible = nf > .25;
-  $('dayChip').textContent = (G.endless ? '♾ ' + (G.wave || 1) + '웨이브' : G.day + '일차') + ' · ' + (now ? '🌙 밤' + (weather === 'rain' ? ' 🌧' : weather === 'fog' ? ' 🌫' : '') : '☀ 낮') + ' · 💎 ' + Math.ceil(G.coreHp == null ? 200 : G.coreHp) + '/200 · 적 ' + mons.length;
+  $('dayChip').textContent = (G.endless ? '♾ ' + (G.wave || 1) + '웨이브' : G.day + '일차') + ' · ' + (now ? '🌙 밤' + (weather === 'rain' ? ' 🌧' : weather === 'fog' ? ' 🌫' : '') : '☀ 낮') + ' · 🌳 ' + Math.ceil(G.coreHp == null ? 200 : G.coreHp) + '/200 · 적 ' + mons.length;
   winMats.forEach(m => m.emissiveIntensity = nf * 1.1);
   towerLamps.forEach(m => m.emissiveIntensity = nf * 1.4);
   for (const k in G.b) { if (G.b[k].t !== 'LAMP') continue; const lm = bmesh[k]; if (!lm || !lm.userData.bulb) continue; lm.userData.bulb.emissiveIntensity = nf * 1.8 + .2; lm.userData.halo.material.opacity = nf * .6; }
