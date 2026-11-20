@@ -1597,18 +1597,32 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
   const end = best ? bc : far;
   return { mz, end, best };
 }
-function fireLightningLine() {   // 번개가 조준선(화면 가운데 또는 끈 방향)과 영점이 맞게 곧장 나가요. 공중 몬스터도 맞아요
-  const { mz, end, best } = laserAim();
+function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을 따라 곧게 뻗어나가요. 지나가는 적을 모두 관통해요
+  const cam = aimRay(), range = CLS[G.cls].rng * 2.4 + 6, mz = muzzle();
+  let o = cam.o, dir = cam.d.clone();
+  if (aimOverride) { const hx = aimOverride.x - px, hz = aimOverride.z - pz, L = Math.hypot(hx, hz) || 1; dir = new THREE.Vector3(hx / L, dir.y, hz / L).normalize(); o = mz; }
+  const reach = o.distanceTo(mz) + range;
+  const far = o.clone().addScaledVector(dir, reach);
+  const hits = [], c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (const m of mons) {
+    if (m.dead || !m.obj) continue;
+    const hx = m.obj.position.x - px, hz = m.obj.position.z - pz;
+    if (Math.hypot(hx, hz) < .6) continue;
+    c.set(m.obj.position.x, m.fly ? m.fly + .6 : .9, m.obj.position.z);
+    v.copy(c).sub(o);
+    const t = v.dot(dir);
+    if (t < 0 || t > reach) continue;
+    if (v.clone().addScaledVector(dir, -t).length() < .8) hits.push({ m, t });
+  }
+  hits.sort((a, b) => a.t - b.t);
   const col = G.cls === 'archer' ? 0xfff1a0 : 0x9fe6ff;
-  // 번개 줄기 (지그재그) — 조준선 위로 곧장
-  bolt([mz.clone(), mz.clone().lerp(end, .33), mz.clone().lerp(end, .66), end.clone()], col);
-  glowAt(mz.x, mz.y, mz.z, 1.2, col, .18);
-  sendFx(0, mz, { x: end.x, z: end.z });
-  if (best && !best.dead) hitEnemy(best, best.boss ? baseHit(best) * 3 : 9999, { kb: .6 });
-  breakNodesAt(end.x, end.z, 1.1);
-  scorchAt(end.x, end.z, .35);
-  puff(end.x, end.z, 4, 0x3a2a1a);
-  sfx('skill'); hitFx(.12);
+  sendFx(0, mz, { x: far.x, z: far.z });
+  throwOrb(mz, far, 0, () => {
+    bolt([mz.clone(), far.clone()], col);
+    for (const h of hits) if (!h.m.dead) hitEnemy(h.m, h.m.boss ? baseHit(h.m) * 2 : 9999, { kb: .4 });
+    breakNodesAt(far.x, far.z, 1.1);
+    sfx('skill'); hitFx(.1);
+  }, G.cls, true);
 }
 function chargeRelease(assist) {
   if (!chargeOn) return;
