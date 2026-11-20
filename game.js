@@ -1449,6 +1449,7 @@ function fwdMon(maxD) {
 let chargeOn = false, holdStart = 0, chargeRing = null;
 let jv = 0;
 function doJump() { if (mode !== 'FIELD' || modalOpen || buildMode || sniper) return; if (Math.abs(py - groundAt(px, pz)) < .05) jv = 7.5; }
+let chargeEl = null;
 let aimOverride = null, chargePid = null, chargeSX = 0, chargeSY = 0, chargeMoved = false;
 function lungeForward(d, dur) {   // 공격하면 바라보는 방향으로 앞으로 나감
   const ox = px, oz = pz, tx = clamp(px + Math.sin(rotY) * d, -LIM, LIM), tz = clamp(pz + Math.cos(rotY) * d, -LIM, LIM);
@@ -1534,6 +1535,7 @@ function chargedZap(lv) {
   const mz = muzzle();
   sendFx(lv, mz, focus);
   throwOrb(mz, new THREE.Vector3(focus.x, .6, focus.z), lv, () => {
+    breakNodesAt(focus.x, focus.z, chargeRadius(lv) + .3);
     for (let w = 0; w < thick; w++) bolt([new THREE.Vector3(focus.x + (w - (thick - 1) / 2) * .14, 9, focus.z), new THREE.Vector3(focus.x, .6, focus.z)], lv >= 1.5 ? 0xff8a3d : (lv >= .8 ? 0xbff4ff : undefined));
     const R = chargeRadius(lv);
     glowAt(focus.x, .4, focus.z, R * 1.6, 0x9fe6ff, .35);
@@ -1612,12 +1614,19 @@ function throwOrb(from, to, lv, onHit, cls) {   // 얼굴 앞에서 던진 번�
     if (onHit) onHit();
   });
 }
+function breakNodesAt(x, z, R) {   // 떨어진 자리 근처의 나무·돌·풀을 부숴요
+  for (const kind in nodes) for (const n of nodes[kind]) {
+    if (!n.alive) continue;
+    if (Math.hypot(n.g.position.x - x, n.g.position.z - z) <= R) harvest(n);
+  }
+}
 function zapFx(mt, onHit, tgt) {   // 얼굴 앞에서 던져서, 도착한 자리에 번개가 떨어져요
   const ty = mt.y != null && mt.y > .5 ? mt.y + .6 : .6;
   const mz = muzzle();
   sendFx(0, mz, mt);
   throwOrb(mz, new THREE.Vector3(mt.x, ty, mt.z), 0, () => {
     const lx = tgt && !tgt.dead ? tgt.obj.position.x : mt.x, lz = tgt && !tgt.dead ? tgt.obj.position.z : mt.z;   // 도착 순간 적이 있는 곳
+    breakNodesAt(lx, lz, 1.1);
     bolt([new THREE.Vector3(lx + rnd(-.4, .4), 9, lz + rnd(-.4, .4)), new THREE.Vector3(lx, .6, lz)], G.cls === 'archer' ? 0xfff1a0 : 0x9fe6ff);
     scorchAt(lx, lz, .42);
     chargeCanisterAt(lx, lz);
@@ -2184,7 +2193,7 @@ app.addEventListener('pointerdown', e => {
   // 공격 버튼을 누른 채 손가락(마우스)을 움직이면, 그 자리에 번개가 떨어져요
   window.addEventListener('pointermove', e => {
     if (!chargeOn || chargePid === null || e.pointerId !== chargePid) return;
-    const hb = $('bHit'), r = hb ? hb.getBoundingClientRect() : null;
+    const hb = chargeEl || $('bHit'), r = hb ? hb.getBoundingClientRect() : null;
     const cx = r ? r.left + r.width / 2 : chargeSX, cy = r ? r.top + r.height / 2 : chargeSY;
     const dx = e.clientX - cx, dy = e.clientY - cy, L = Math.hypot(dx, dy);
     if (L < 6) { aimOverride = null; return; }
@@ -2198,7 +2207,7 @@ app.addEventListener('pointerdown', e => {
   });
   const wireAttack = (id, assist) => {
     const el = $(id);
-    el.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); pointerFired = true; chargePid = e.pointerId; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist); });
+    el.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); pointerFired = true; chargePid = e.pointerId; chargeEl = el; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist); });
     const rel = () => { chargeRelease(assist); setTimeout(() => { pointerFired = false; }, 60); };
     el.addEventListener('pointerup', rel); el.addEventListener('pointercancel', rel);
     el.onclick = () => { if (pointerFired) { pointerFired = false; return; } chargeStart(assist); chargeRelease(assist); };
