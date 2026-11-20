@@ -1799,7 +1799,7 @@ const XSKILLS = {
   water:  { ic: '💦', name: '물대포 쏘기',     btn: '💦 물대포', d: '앞으로 물줄기를 쏘아 적을 밀어내요' },
   laser:  { ic: '🔴', name: '레이저빔',        btn: '🔴 레이저', d: '조준한 방향으로 긴 빔을 쏘아 꿰뚫어요' }
 };
-const XCD = { meteor: 9, water: 5, laser: 7 };
+const XCD = { meteor: 9, water: 5, laser: 3 };
 const XMAX = 3;
 let xCd = {}, xGeo = null, xMat = null;
 function xLv(k) { return (G && G.xs && G.xs[k]) || 0; }
@@ -1872,10 +1872,10 @@ function renderXSkills() {
   const box = $('xSkills'); if (!box || !G) return; box.innerHTML = '';
   for (const k in XSKILLS) {
     if (!xLv(k)) continue;
-    const b = document.createElement('button'); b.className = 'xs'; b.dataset.k = k;
+    const b = document.createElement('button'); b.className = 'xs'; b.dataset.k = k; b.id = 'xs_' + k;
     b.title = XSKILLS[k].name + ' (Lv ' + xLv(k) + ')';
     b.onclick = () => useXSkill(k);
-    box.appendChild(b);
+    box.appendChild(b); wireMovableBtn(b);
   }
   updXSkillsCd();
 }
@@ -2350,7 +2350,7 @@ function setupInput() {
     if (id === 'bHit') { if (!e.repeat) { chargeEl = $('bHit'); chargeStart(false); } return; }
     el.click();
   });
-  { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
+  { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; wireMovableBtn(bs); }
   [['bHit', 'A'], ['bSkill', 'S'], ['bBuild', 'D'], ['bGather', 'Z'], ['bTalk', 'X'], ['bSnipe', 'F']].forEach(([id, k]) => { $(id).dataset.key = k; });
   // 시선 회전 키 안내는 Q/E 입력 시 표시
   // 건축 중에 다른 버튼을 누르면 건축 모드가 꺼져요
@@ -3034,6 +3034,11 @@ function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어
   return;
 }
 let mvDrag = null;
+function wireMovableBtn(el) {   // 버튼을 길게(끌어서) 옮길 수 있게 해요. 옮긴 위치는 기기에 저장돼요
+  try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + el.id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
+  el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  el.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = el.getBoundingClientRect(); mvDrag = { el, id: el.id, pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false, t0: performance.now() }; });
+}
 function btnPlace(el, l, t) { el.style.position = 'fixed'; el.style.left = l + 'px'; el.style.top = t + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.zIndex = 6; }
 function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   const g = document.getElementById('hitGrip'); if (g) g.remove();
