@@ -1559,37 +1559,48 @@ function screenToGround(cx, cy) {   // 화면 좌표 → 땅 위의 점
   const hp = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hp) ? { x: hp.x, z: hp.z } : null;
 }
 function chargeStart(assist) { chargeOn = !modalOpen && mode === 'FIELD' && !buildMode; chargeAssist = !!assist; holdStart = performance.now(); aimOverride = null; chargeMoved = false; }
-function lineShot(held) {   // 왼쪽 버튼: 조준점(화면 가운데, 또는 끈 방향)을 그대로 따라 곧게 나가요. 공중 몬스터도 맞아요
-  const cam = aimRay(), pw = 1 + Math.min(held, 2) * 1.2, range = CLS[G.cls].rng * 1.8 + 4;
+// 레이저: 왼쪽 버튼을 누르고 있는 동안 조준점 방향으로 빔이 나가요
+let laserMesh = null, laserCd = 0;
+function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적과 빔 끝
+  const cam = aimRay(), range = CLS[G.cls].rng * 1.8 + 4;
   const mz = muzzle();
   let o = cam.o, dir = cam.d.clone();
-  if (aimOverride) {   // 끌어서 정한 방향: 가로 방향은 끈 쪽, 세로는 시선 기준
-    const hx = aimOverride.x - px, hz = aimOverride.z - pz, L = Math.hypot(hx, hz) || 1;
-    dir = new THREE.Vector3(hx / L, dir.y, hz / L).normalize(); o = mz;
-  }
+  if (aimOverride) { const hx = aimOverride.x - px, hz = aimOverride.z - pz, L = Math.hypot(hx, hz) || 1; dir = new THREE.Vector3(hx / L, dir.y, hz / L).normalize(); o = mz; }
   const fx = dir.x, fz = dir.z, FL = Math.hypot(fx, fz) || 1;
   let best = null, bt = 1e9, bc = null;
   const c = new THREE.Vector3(), v = new THREE.Vector3();
   for (const m of mons) {
     if (m.dead || !m.obj) continue;
     const hx = m.obj.position.x - px, hz = m.obj.position.z - pz;
-    if (Math.hypot(hx, hz) < .6) continue;                      // 내 몸 옆은 제외
-    if ((hx * fx + hz * fz) / (Math.hypot(hx, hz) * FL) < .2) continue;   // 앞쪽만
+    if (Math.hypot(hx, hz) < .6) continue;
+    if ((hx * fx + hz * fz) / (Math.hypot(hx, hz) * FL) < .2) continue;
     c.set(m.obj.position.x, m.fly ? m.fly + .6 : .9, m.obj.position.z);
     v.copy(c).sub(o);
     const t = v.dot(dir);
     if (t < .2 || t > range + 12 || t >= bt) continue;
-    const perp = v.clone().addScaledVector(dir, -t).length();
-    if (perp < .7) { bt = t; best = m; bc = c.clone(); }
+    if (v.clone().addScaledVector(dir, -t).length() < .7) { bt = t; best = m; bc = c.clone(); }
   }
   const end = best ? bc : mz.clone().addScaledVector(dir, range);
-  sendFx(0, mz, { x: end.x, z: end.z });
-  throwOrb(mz, end, held > 1 ? 1 : 0, () => {
-    if (best && !best.dead) hitEnemy(best, best.boss ? baseHit(best) * pw : 9999, { kb: .6 });
-    breakNodesAt(end.x, end.z, 1.1);
-    scorchAt(end.x, end.z, .35);
-    puff(end.x, end.z, 4, 0x3a2a1a);
-  }, G.cls, true);
+  return { mz, end, best };
+}
+function updateLaser(dt) {
+  const on = chargeOn && chargeEl && chargeEl.id === 'bPadAtk' && mode === 'FIELD' && !modalOpen && !buildMode && !sniper;
+  if (!laserMesh) { laserMesh = new THREE.Mesh(new THREE.BoxGeometry(.12, .12, 1), new THREE.MeshBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false })); laserMesh.visible = false; scene.add(laserMesh); }
+  if (!on) { laserMesh.visible = false; laserCd = 0; return; }
+  const { mz, end, best } = laserAim();
+  const len = Math.max(.1, mz.distanceTo(end));
+  laserMesh.visible = true;
+  laserMesh.position.copy(mz).lerp(end, .5);
+  laserMesh.scale.set(1, 1, len);
+  laserMesh.lookAt(end);
+  laserMesh.material.opacity = .75 + .2 * Math.sin(gameT * 30);
+  laserCd -= dt;
+  if (laserCd <= 0 && best && !best.dead) {   // 빔이 닿는 동안 계속 피해를 줘요
+    laserCd = .18;
+    hitEnemy(best, best.boss ? baseHit(best) * 1.2 : 9999, { kb: 0 });
+    glowAt(end.x, end.y, end.z, 1.1, 0x7ff3ff, .15);
+  }
+  if (laserCd < -1) laserCd = 0;
 }
 function chargeRelease(assist) {
   if (!chargeOn) return;
@@ -1597,7 +1608,7 @@ function chargeRelease(assist) {
   if (mode !== 'FIELD' || modalOpen || buildMode) { aimOverride = null; return; }
   if (sniper) { fireSniper(); return; }
   if (chargeEl && chargeEl.id === 'bPadAtk') {   // 왼쪽 버튼: 조준한 방향으로 곧게 쏴요
-    lineShot(held); aimOverride = null; chargeEl = null; return;
+    aimOverride = null; chargeEl = null; return;   // 왼쪽 버튼은 누르는 동안 레이저로 쏴요
   }
   if (aimOverride) { const lv = Math.min(Math.max(held, .3), 2.5); chargedZap(lv); aimOverride = null; return; }   // 드래그한 자리에 떨어뜨려요
   if (assist || chargeAssist) assistAim();
@@ -3139,7 +3150,7 @@ function tick(now) {
     updProjs(dt); stepParts(dt);
     atkCd -= dt;
     if (atkCd <= 0 && !modalOpen && mode === 'FIELD' && !buildMode) { if (attackNow(false)) atkCd = .7 / rateMul() / CLS[G.cls].rate; else atkCd = .15; }
-    updateChargeRing(); syncHitGrip();
+    updateChargeRing(); syncHitGrip(); updateLaser(dt);
     if (meteorZone && performance.now() < meteorZone.until) {
       for (const m of mons) {
         if (m.dead || !m.fly || !m.obj) continue;
