@@ -87,6 +87,7 @@ button{font-family:inherit;cursor:pointer}
   #topR .chip{font-size:11px}
   #bossBar{top:44px}
 }
+#actGrip{position:absolute;top:-22px;right:0;background:rgba(255,250,238,.92);border:2px solid var(--line);border-radius:12px;padding:2px 10px;font-size:11px;font-weight:900;cursor:move;touch-action:none;user-select:none;z-index:2}
 #skillCol{display:flex;flex-direction:column;align-items:center;gap:6px}
 #xSkills{display:flex;flex-direction:column;align-items:center;gap:4px}
 .xs{height:28px;padding:0 10px;border-radius:14px;border:2px solid #fff;background:#fff6e0;box-shadow:0 2px 0 #e0b56a;font-size:11px;font-weight:900;color:var(--ink);white-space:nowrap}
@@ -255,6 +256,8 @@ button{font-family:inherit;cursor:pointer}
   <div id="actions" class="hidden">
     <div id="skillCol"><button class="rb skill" id="bSkill"><span class="cd" id="skillCd"></span><span id="skillTxt" style="white-space:nowrap">⚡ 낙뢰</span></button><div id="xSkills"></div></div>
     <button class="rb hit" id="bHit">⚔ 공격</button>
+    <button class="rb" id="bJump">⤴ 점프</button>
+    <div id="actGrip" title="끌어서 옮기기">✥ 이동</div>
     <button class="rb" id="bRun">🏃 달리기</button>
   </div>
   <div id="palette">

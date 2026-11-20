@@ -217,7 +217,7 @@ function upgradeBuilding(k) {
   if (G.res.wood < c.wood || G.res.stone < c.stone) { toast('🪵 나무 ' + c.wood + ' · 🪨 돌 ' + c.stone + '이 필요해요'); return; }
   G.res.wood -= c.wood; G.res.stone -= c.stone; b.lv = lv + 1;
   { const bonus = BUILD[b.t].hp * (b.t === 'WALL' ? .6 : .4); b.hp = (b.hp || BUILD[b.t].hp) + bonus; }
-  if (b.t === 'APT') { const old = bmesh[k]; if (old) { world.remove(old); delete bmesh[k]; } addBuildingMesh(k, b); if (sniper && perchKey === k) py = aptH(b.lv) + .4; }
+  if (b.t === 'APT') { const old = bmesh[k]; if (old) { world.remove(old); delete bmesh[k]; } addBuildingMesh(k, b); if (sniper && perchKey === k) py = aptH(b.lv) + .32; }
   const m = bmesh[k];
   if (m) { const base = m.userData.baseS || (m.userData.baseS = m.scale.x); tweenTo(base, base * 1.14, .22, v => m.scale.setScalar(v), 'back', 0, () => tweenTo(base * 1.14, base, .2, v => m.scale.setScalar(v), 'out')); }
   const [bx, bz] = k.split(',').map(Number);
@@ -1244,7 +1244,7 @@ function groundAt(x, z) {
     const b = G.b[k]; if (b.t !== 'APT') continue;
     const [ax, az] = k.split(',').map(Number), H = aptH(b.lv || 1);
     const dx = x - ax, dz = z - az;
-    if (Math.abs(dx) <= 1.4 && Math.abs(dz) <= 1.4) { if (py > H * .5) h = Math.max(h, H); }
+    if (Math.abs(dx) <= 1.4 && Math.abs(dz) <= 1.4) { if (py > H * .5) h = Math.max(h, H + .3); }   // 지붕 윗면
     else if (dx >= 1.5 && dx < 5.5 && Math.abs(dz) <= .7) { const st = Math.min(5, Math.floor((dx - 1.5) / (4 / 6))); h = Math.max(h, H * (1 - st / 6)); }
   }
   return h;
@@ -1433,6 +1433,8 @@ function fwdMon(maxD) {
   return best;
 }
 let chargeOn = false, holdStart = 0, chargeRing = null;
+let jv = 0;
+function doJump() { if (mode !== 'FIELD' || modalOpen || buildMode || sniper) return; if (Math.abs(py - groundAt(px, pz)) < .05) jv = 7.5; }
 let aimOverride = null, chargePid = null, chargeSX = 0, chargeSY = 0, chargeMoved = false;
 function lungeForward(d, dur) {   // 공격하면 바라보는 방향으로 앞으로 나감
   const ox = px, oz = pz, tx = clamp(px + Math.sin(rotY) * d, -LIM, LIM), tz = clamp(pz + Math.cos(rotY) * d, -LIM, LIM);
@@ -2109,6 +2111,7 @@ function setupInput() {
     if (e.code === 'F3') { e.preventDefault(); toggleFps(); return; }
     if (e.code === 'KeyC') { scopeLock = !scopeLock; flashKey('C', scopeLock ? '줌 조준' : '줌 끔'); return; }
     if (e.code === 'Space' && sniper) { e.preventDefault(); fireSniper(); return; }
+    if (e.code === 'Space' && !buildMode) { e.preventDefault(); doJump(); return; }
          if (e.code === 'Space' && buildMode && buildTarget) { e.preventDefault(); flashKey('Space', '건물 놓기'); placeAt(buildTarget.x, buildTarget.z); return; }
     const id = KEY_ACT[e.code]; if (!id) return;
     const el = $(id); if (!el || el.classList.contains('hide-btn') || el.offsetParent === null) return;
@@ -2121,6 +2124,7 @@ function setupInput() {
   { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
   [['bHit', 'A'], ['bSkill', 'S'], ['bBuild', 'D'], ['bGather', 'Z'], ['bTalk', 'X'], ['bSnipe', 'F']].forEach(([id, k]) => { $(id).dataset.key = k; });
   // 시선 회전 키 안내는 Q/E 입력 시 표시
+  $('bJump').onclick = doJump; setupActGrip();
   $('bHit').title = '공격 (A)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
   $('bGather').title = '채집 (Z)'; $('bTalk').title = '대화/거래 (X)';
   // 화면 드래그로 카메라, 짧게 누르면 공격/건설
@@ -2776,6 +2780,15 @@ function nearPerch() {
   for (const k in G.b) { if (G.b[k].t !== 'APT') continue; const [x, z] = k.split(',').map(Number); const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = k; } }
   return best;
 }
+function setupActGrip() {
+  const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
+  try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) {}
+  let gid = null, ox = 0, oy = 0;
+  grip.addEventListener('pointerdown', e => { gid = e.pointerId; const r = box.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; grip.setPointerCapture && grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
+  grip.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; const l = clamp(e.clientX - ox, 0, innerWidth - box.offsetWidth), t = clamp(e.clientY - oy, 0, innerHeight - box.offsetHeight); box.style.left = l + 'px'; box.style.top = t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; });
+  const end = e => { if (e.pointerId !== gid) return; gid = null; try { localStorage.setItem('farm-act-pos', JSON.stringify({ l: parseInt(box.style.left, 10) || 0, t: parseInt(box.style.top, 10) || 0 })); } catch (x) {} };
+  grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
+}
 function toggleSniper() {
   if (mode !== 'FIELD' || modalOpen || buildMode) return;
   if (sniper) {
@@ -2789,7 +2802,7 @@ function toggleSniper() {
   }
   const k = nearPerch(); if (!k) { toast('아파트 옆에서 ⬆ 위로 올라가기를 누르세요.'); return; }
   const [x, z] = k.split(',').map(Number);
-  perchKey = k; sniper = true; px = x; pz = z; py = aptH(G.b[k].lv || 1) + .4; vx = 0; vz = 0; camYawT = null;
+  perchKey = k; sniper = true; px = x; pz = z; py = aptH(G.b[k].lv || 1) + .32; vx = 0; vz = 0; camYawT = null;
   puff(x, z, 8, 0xffffff); toast('🎯 지붕 위! 화면을 드래그해 조준하고 공격/A를 누르세요.');
 }
 // 수동 조준: 화면 가운데 조준점에 가장 가까운 좀비 (줌 상태에서만)
@@ -2873,7 +2886,11 @@ function tick(now) {
     if (walking) { const tgt = Math.atan2(vx, vz); let df = tgt - rotY; while (df < -Math.PI) df += Math.PI * 2; while (df > Math.PI) df -= Math.PI * 2; rotY += df * Math.min(1, dt * 11); }
     if (walking && (runKey || keys.shift || runLock) && Math.random() < dt * 8) puff(px, pz, 1, 0xf6ecd2);
   }
-  if (!sniper) { const gh = groundAt(px, pz); py = py > gh ? Math.max(gh, py - 14 * dt) : py + (gh - py) * Math.min(1, dt * 9); }
+  if (!sniper) {
+    const gh = groundAt(px, pz);
+    if (jv !== 0 || py > gh + .01) { py += jv * dt; jv -= 24 * dt; if (py <= gh) { py = gh; jv = 0; } }   // 점프·낙하
+    else py = gh;
+  }
   if (sniper) { const pc = perchKey && G.b[perchKey] ? perchKey.split(',').map(Number) : null; if (!pc) { sniper = false; perchKey = null; py = 0; toast('건물이 사라져서 지상으로 내려왔어요.'); } else { px = clamp(px, pc[0] - 1.3, pc[0] + 1.3); pz = clamp(pz, pc[1] - 1.3, pc[1] + 1.3); } }
   updateSniperAim(dt);
   if (player) {
@@ -2973,7 +2990,7 @@ function tick(now) {
     const nn = nearestNode(2.6);
     const nv = nearVillager(3), nb = nearBuilding(3);
     $('bTalk').classList.toggle('hide-btn', !((nearMayor || nv) && mode === 'FIELD' && !buildMode));
-    { const sOk = sniper || !!nearPerch(); const bsn = $('bSnipe'); if (bsn) { bsn.classList.toggle('hide-btn', !(sOk && mode === 'FIELD' && !buildMode)); const lbl = sniper ? '⬇ 내려가기' : '⬆ 위로 올라가기'; const st = $('snipeTxt'); if (st && st.textContent !== lbl) st.textContent = lbl; } }
+    { const sOk = false; /* 올라가기 버튼 제거: 계단으로 걸어서 올라가요 */ const bsn = $('bSnipe'); if (bsn) { bsn.classList.toggle('hide-btn', !(sOk && mode === 'FIELD' && !buildMode)); const lbl = sniper ? '⬇ 내려가기' : '⬆ 위로 올라가기'; const st = $('snipeTxt'); if (st && st.textContent !== lbl) st.textContent = lbl; } }
     setTxt('bTalk', nearMayor || !nv ? '💬 대화' : '🛒 거래');
     $('bUp').classList.toggle('hide-btn', !(nb && (nb.b.lv || 1) < 3 && mode === 'FIELD' && !buildMode));
     if (nb) setTxt('bUp', '⬆ ' + ((nb.b.lv || 1) + 1) + '단계');
