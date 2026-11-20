@@ -885,6 +885,18 @@ function pickKind() {
   return ks[0];
 }
 function diffMul() { return 1 + (G.day - 1) * .12 + (G.endless ? (G.wave || 1) * .1 : 0); }
+const SPR_PAD = {};
+function spritePadFrac(k) {   // 그림 맨 아래 투명 여백 비율 (발이 얼마나 떠 있는지)
+  if (SPR_PAD[k] !== undefined) return SPR_PAD[k];
+  const tx = SPR[k] && SPR[k].move, im = tx && tx.image;
+  if (!im || !im.width) return 0;
+  const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height;
+  const g = cv.getContext('2d'); g.drawImage(im, 0, 0);
+  const d = g.getImageData(0, 0, cv.width, cv.height).data; let bot = -1;
+  for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4 + 3] > 40) bot = y;
+  SPR_PAD[k] = bot < 0 ? 0 : (cv.height - 1 - bot) / cv.height;
+  return SPR_PAD[k];
+}
 function makeMon(kind, x, z, opts) {
   const d = opts && opts.boss ? BOSS[kind] : MON[kind];
   const skey = opts && opts.boss ? d.sprite : (d.sprite || kind);
@@ -895,11 +907,12 @@ function makeMon(kind, x, z, opts) {
   const A = { move: cloneTex(sp.move), atk: cloneTex(sp[ak] || sp.move), hit: cloneTex(sp.hit || sp.move), death: cloneTex(sp.death || sp.move) };
   const obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: A.move, transparent: true, alphaTest: .05, depthWrite: false, toneMapped: false }));
   const sc = d.sc * (opts && opts.boss ? 1 : 1.2);
+  const padY = spritePadFrac(d.sprite || kind) * sc;
   obj.center.set(.5, 0); obj.scale.set(sc, sc, 1); obj.position.set(x, d.fly || 0, z); world.add(obj);
   const shadow = new THREE.Mesh(blobGeo, blobMat); shadow.rotation.x = -Math.PI / 2; shadow.scale.setScalar(sc * .55); shadow.position.set(x, .02, z); world.add(shadow);
   const hpMax = opts && opts.boss ? Math.round(d.hp * diffMul() * (1 + (G.day - 5) * .18)) : 1;
   const m = {
-    kind, boss: !!(opts && opts.boss), d, obj, shadow, A, cur: null, loop: false, at: 0, done: false, face: 1,
+    kind, boss: !!(opts && opts.boss), d, obj, shadow, padY, A, cur: null, loop: false, at: 0, done: false, face: 1,
     hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
     fly: d.fly || 0, ph: rnd(0, 6), kx: 0, kz: 0, flash: 0, touchCd: 0, ringCd: 2.4, texs: [A.move, A.atk, A.hit, A.death]
   };
@@ -1297,7 +1310,7 @@ function updMon(m, dt) {
   const tn = m.d.tint || [1.14, 1.08, 1.08]; o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
   // 넉백 감쇠
   if (Math.abs(m.kx) + Math.abs(m.kz) > .001) { o.position.x += m.kx * dt * 4; o.position.z += m.kz * dt * 4; m.kx *= Math.pow(.02, dt); m.kz *= Math.pow(.02, dt); }
-  o.center.set(.5, 0); o.position.y = m.fly ? m.fly : .09; m.shadow.position.set(o.position.x, .02, o.position.z);   // 발이 땅에 붙도록 기준점을 아래로   // 날개 있는 몬스터만 떠 있어요
+  o.center.set(.5, 0); o.position.y = (m.fly ? m.fly : .09) - (m.padY || 0); m.shadow.position.set(o.position.x, .02, o.position.z);   // 발이 땅에 붙도록 기준점을 아래로   // 날개 있는 몬스터만 떠 있어요
   if (m.dead) { stepAnim(m, dt); if (m.done) removeMon(m); return; }
   const x = o.position.x, z = o.position.z;
   m.ph += dt;
@@ -1363,7 +1376,7 @@ function updMon(m, dt) {
     if (dd > 0) { o.position.x += dx / dd * sp; o.position.z += dz / dd * sp; }
     setAnim(m, 'move', true); stepAnim(m, dt);
   }
-  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12; else o.position.y = .09;   // 걷는 몬스터는 땅 위
+  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12 - (m.padY || 0); else o.position.y = .09 - (m.padY || 0);   // 걷는 몬스터는 땅 위
   if (!Number.isFinite(o.position.y)) o.position.y = .09;   // 오류 방지
 }
 function hitEnemy(m, dmg, opt) {
@@ -1580,7 +1593,8 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
     if (t < .2 || t > range + 12 || t >= bt) continue;
     if (v.clone().addScaledVector(dir, -t).length() < .7) { bt = t; best = m; bc = c.clone(); }
   }
-  const end = best ? bc : mz.clone().addScaledVector(dir, range);
+  const far = aimRay().o.clone().addScaledVector(dir, aimRay().o.distanceTo(mz) + range);   // 조준선 위의 먼 점 → 화면 가운데로 곧게
+  const end = best ? bc : far;
   return { mz, end, best };
 }
 function fireLightningLine() {   // 번개가 조준선(화면 가운데 또는 끈 방향)과 영점이 맞게 곧장 나가요. 공중 몬스터도 맞아요
