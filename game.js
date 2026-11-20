@@ -3539,7 +3539,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.4';
+const APP_VERSION = '2026.11.21.5';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
@@ -3547,10 +3547,16 @@ function checkUpdate() {
   fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(j => {
-      if (j.version === APP_VERSION) msg.textContent = '✅ 최신 버전이에요 (' + APP_VERSION + ')';
-      else msg.innerHTML = '🆕 새 버전 ' + j.version + ' 이 있어요. ' + (j.note || '') + '<br>웹은 새로고침, 앱은 새 APK를 설치해 주세요.';
+      if (j.version === APP_VERSION) { msg.textContent = '✅ 최신 버전이에요 (' + APP_VERSION + ')'; return; }
+      msg.innerHTML = '🆕 새 버전 ' + j.version + ' 이 있어요. ' + (j.note || '') + '<br><button class="btn leaf" id="bApplyUpd" style="margin-top:8px">⬇ 지금 업데이트</button>';
+      document.getElementById('bApplyUpd').onclick = () => applyUpdate(j.version);
     })
     .catch(() => { msg.textContent = '⚠ 업데이트 정보를 가져오지 못했어요. 인터넷 연결을 확인해 주세요.'; });
+}
+// 게임은 서버(Pages)에서 불러와요. 새 버전 번호로 다시 열면 최신 파일을 받아요 (APK 재설치 불필요)
+function applyUpdate(ver) {
+  const msg = document.getElementById('updMsg'); if (msg) msg.textContent = '⬇ 새 버전을 받는 중...';
+  setTimeout(() => location.replace(location.pathname + '?v=' + encodeURIComponent(ver)), 250);
 }
 function setupSettings() {
   const $$ = id => document.getElementById(id);
