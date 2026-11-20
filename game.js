@@ -3524,9 +3524,11 @@ function tick(now) {
     if (nn) setTxt('bGather', nn.kind === 'tree' ? '🪓 벌목' : nn.kind === 'rock' ? '⛏ 돌 캐기' : '🌿 채집');
     { const rc = $('recChip'); if (rc) {
       const far = (!nn && !nearestMon(c0Range())) ? (aimNode(6) || nearestNode(6)) : null;
+      const rec = mode === 'FIELD' && !buildMode ? recommendNext() : null;
       const show = !!far && mode === 'FIELD' && !buildMode;
-      rc.style.display = show ? '' : 'none';
-      if (show) rc.textContent = '💡 추천: ' + (far.kind === 'tree' ? '🪵 나무' : far.kind === 'rock' ? '🪨 돌' : '🌿 덤불') + ' — 공격(A)으로 멀리서 쓰러뜨리면 아이템을 얻어요';
+      rc.style.display = (rec || show) ? '' : 'none';
+      if (rec) rc.textContent = '💡 추천: ' + rec;
+      else if (show) rc.textContent = '💡 추천: ' + (far.kind === 'tree' ? '🪵 나무' : far.kind === 'rock' ? '🪨 돌' : '🌿 덤불') + ' — 공격(A)으로 멀리서 쓰러뜨리면 아이템을 얻어요';
     } }
     // 건설 미리보기
     if (buildMode) {
@@ -3587,7 +3589,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.7';
+const APP_VERSION = '2026.11.21.8';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
@@ -3605,6 +3607,49 @@ function checkUpdate() {
 function applyUpdate(ver) {
   const msg = document.getElementById('updMsg'); if (msg) msg.textContent = '⬇ 새 버전을 받는 중...';
   setTimeout(() => location.replace(location.pathname + '?v=' + encodeURIComponent(ver)), 250);
+}
+/* ================= 상점 · 추천 ================= */
+const SHOP = [
+  { name: '🪵 나무 10개', cost: 2, buy: () => { G.res.wood += 10; } },
+  { name: '🪨 돌 10개', cost: 2, buy: () => { G.res.stone += 10; } },
+  { name: '🌿 섬유 10개', cost: 2, buy: () => { G.res.fiber = (G.res.fiber || 0) + 10; } },
+  { name: '💠 보석나무 회복 +40', cost: 4, buy: () => { G.coreHp = Math.min(200, (G.coreHp == null ? 200 : G.coreHp) + 40); } },
+  { name: '❤ 내 체력 회복 +40', cost: 3, buy: () => { G.hp = Math.min(G.maxHp, G.hp + 40); } }
+];
+function renderShop() {
+  const box = document.getElementById('shopList'); if (!box || !G) return;
+  box.innerHTML = '';
+  const gems = G.res.gems || 0;
+  document.getElementById('shopGems').textContent = '💎 ' + gems;
+  SHOP.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (gems >= it.cost ? ' leaf' : '');
+    b.style.cssText = 'width:100%;margin:4px 0';
+    b.textContent = it.name + '  ·  💎' + it.cost;
+    b.disabled = gems < it.cost;
+    b.onclick = () => buyItem(i);
+    box.appendChild(b);
+  });
+}
+function buyItem(i) {
+  const it = SHOP[i];
+  if (!G || (G.res.gems || 0) < it.cost) { toast('보석이 부족해요.'); return; }
+  G.res.gems -= it.cost; it.buy(); sfx('gem'); vib('place');
+  toast('🛒 ' + it.name + ' 구입!'); persistRun(); renderShop();
+}
+function recommendNext() {   // 지금 상황에서 가장 도움 되는 한 가지를 추천해요
+  if (!G) return null;
+  const gems = G.res.gems || 0;
+  if (G.coreHp != null && G.coreHp < 90 && gems >= 4) return '💠 보석나무가 약해요 — 🛒 상점에서 회복(💎4)을 사세요';
+  if (G.hp < G.maxHp * .4 && gems >= 3) return '❤ 체력이 낮아요 — 🛒 상점에서 체력 회복(💎3)을 사세요';
+  if (G.res.wood < 5 || G.res.stone < 5) return '🪵 재료가 모자라요 — 나무·돌을 모아 건설 재료를 채우세요';
+  if (!Object.values(G.b).some(b => b.t === 'LAMP') && nightF(G.cycT) > .4) return '💡 밤이 와요 — 전등을 놓으면 적을 더 잘 볼 수 있어요';
+  return null;
+}
+function setupShop() {
+  const modal = document.getElementById('shopModal'); if (!modal) return;
+  document.getElementById('bShop').onclick = () => { renderShop(); modal.classList.add('show'); };
+  document.getElementById('bShopClose').onclick = () => modal.classList.remove('show');
 }
 function setupSettings() {
   const $$ = id => document.getElementById(id);
@@ -3643,3 +3688,4 @@ function silentUpdateCheck() {
     .catch(() => { });
 }
 setupSettings();
+setupShop();

@@ -61,7 +61,7 @@ button{font-family:inherit;cursor:pointer}
 .note{font-size:11px;opacity:.7;margin-top:10px}
 
 /* ---------- HUD ---------- */
-#hud{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;z-index:6;pointer-events:none}
+#hud{position:absolute;top:max(40px,calc(env(safe-area-inset-top,0px) + 16px));left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;z-index:6;pointer-events:none}
 #hud .col{display:flex;flex-direction:column;gap:6px;max-width:72%}
 #hud .chip{pointer-events:none}
 #hud.collapsed #hudBody{display:none}
@@ -83,7 +83,7 @@ button{font-family:inherit;cursor:pointer}
   #knob{width:46px;height:46px;left:35px;top:35px}
   #palette{top:52px;bottom:auto;left:50%;transform:translateX(-50%);right:auto;max-width:54vw}
   #dialog{left:8%;right:8%;bottom:8px;padding:10px 12px}
-  #hud{top:6px;left:6px;right:6px}
+  #hud{top:max(16px,calc(env(safe-area-inset-top,0px) + 8px));left:6px;right:6px}
   #topR .chip{font-size:11px}
   #bossBar{top:44px}
 }
@@ -295,6 +295,7 @@ button{font-family:inherit;cursor:pointer}
         <button class="rb on" id="bBuild">🔨 건설</button>
 
         <button class="chip" id="bRunLock" style="pointer-events:auto">🏃 고정 끔</button>
+        <button class="chip" id="bShop" style="pointer-events:auto">🛒 상점</button>
         <button class="chip" id="bFp" style="pointer-events:auto">👁 3인칭</button>
         <button class="chip" id="bXh" style="pointer-events:auto">🎯 조준점 켬</button>
         <button class="rb gold hide-btn" id="bGather">🪓 벌목</button>
@@ -345,6 +346,12 @@ button{font-family:inherit;cursor:pointer}
     <div class="row"><button class="btn leaf" id="bUpdate">🔄 업데이트 확인</button></div>
     <div id="updMsg" class="story" style="font-size:13px">현재 버전: <span id="verTxt"></span></div>
     <div class="row"><button class="btn primary" id="bSetClose">닫기</button></div>
+  </div></div>
+  <div class="modal" id="shopModal" style="z-index:100"><div class="card" style="max-width:340px">
+    <h3 style="margin:0 0 6px">🛒 상점</h3>
+    <div id="shopGems" style="font-weight:900;margin-bottom:6px"></div>
+    <div id="shopList"></div>
+    <div class="row"><button class="btn primary" id="bShopClose">닫기</button></div>
   </div></div>
   <div class="modal" id="lvlModal"><div class="card" id="lvlCard">
     <h3>⭐ 레벨 <span id="lvlNew">2</span>!</h3>
@@ -411,7 +418,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="load"><div class="spin"></div>🌿 마을을 준비하는 중…</div>
   <div id="err"></div>
 </div>
-<script src="game.js?v=2026.11.21.7"></script>
+<script src="game.js?v=2026.11.21.8"></script>
 <script>
 // 오프닝: 표지를 쓸어올리거나(좌우로 밀거나) 시작 버튼을 누르면 홈 화면이 나와요
 (function(){
