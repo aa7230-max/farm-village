@@ -2175,8 +2175,17 @@ app.addEventListener('pointerdown', e => {
   // 공격 버튼을 누른 채 손가락(마우스)을 움직이면, 그 자리에 번개가 떨어져요
   window.addEventListener('pointermove', e => {
     if (!chargeOn || chargePid === null || e.pointerId !== chargePid) return;
-    if (!chargeMoved && Math.hypot(e.clientX - chargeSX, e.clientY - chargeSY) > 10) chargeMoved = true;
-    if (chargeMoved) { const g = screenToGround(e.clientX, e.clientY); if (g) aimOverride = g; }
+    const hb = $('bHit'), r = hb ? hb.getBoundingClientRect() : null;
+    const cx = r ? r.left + r.width / 2 : chargeSX, cy = r ? r.top + r.height / 2 : chargeSY;
+    const dx = e.clientX - cx, dy = e.clientY - cy, L = Math.hypot(dx, dy);
+    if (L < 6) { aimOverride = null; return; }
+    chargeMoved = true;
+    // 방향키처럼: 끌어간 방향 = 화면 기준 방향, 많이 끌수록 멀리 떨어뜨려요
+    const c = CLS[G.cls], dist = Math.min(1, L / 60) * c.rng * 1.4 + 1.2;
+    const nx = dx / L, ny = dy / L;
+    const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+    const wx = rx * nx + fx * (-ny), wz = rz * nx + fz * (-ny);
+    aimOverride = { x: px + wx * dist, z: pz + wz * dist };
   });
   const wireAttack = (id, assist) => {
     const el = $(id);
@@ -2789,22 +2798,9 @@ let hitMoved = false;
 function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어 다녀요 (옮기기 전까지)
   return;
 }
-let hdrag = null;
-function setupHitGrip() {   // 공격 버튼: 누른 채 끌면 버튼이 따라와요. 가만히 누르면 기를 모아요
-  const hb = $('bHit'); if (!hb) return;
-  const g = document.getElementById('hitGrip'); if (g) g.style.display = 'none';
-  const place = (l, t) => { hitMoved = true; hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; };
-  const save = () => { try { localStorage.setItem('farm-hit-pos2', JSON.stringify({ l: parseInt(hb.style.left, 10) || 0, t: parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
-  let sv = null; try { sv = JSON.parse(localStorage.getItem('farm-hit-pos2') || 'null'); } catch (e) {}
-  if (sv) { hitMoved = true; place(clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); }
-  hb.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = hb.getBoundingClientRect(); hdrag = { pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false }; });
-  window.addEventListener('pointermove', e => {
-    if (!hdrag || e.pointerId !== hdrag.pid) return;
-    if (!hdrag.moved && Math.hypot(e.clientX - hdrag.sx, e.clientY - hdrag.sy) > 12) { hdrag.moved = true; chargeOn = false; aimOverride = null; }
-    if (hdrag.moved) place(clamp(e.clientX - hdrag.ox, 0, innerWidth - 70), clamp(e.clientY - hdrag.oy, 0, innerHeight - 70));
-  });
-  const end = e => { if (!hdrag || e.pointerId !== hdrag.pid) return; if (hdrag.moved) save(); hdrag = null; };
-  window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+function setupHitGrip() {   // 공격 버튼은 제자리에 있어요 (끌면 조준 방향이 바뀌어요)
+  const g = document.getElementById('hitGrip'); if (g) g.remove();
+  const hb = $('bHit'); if (hb) { hb.style.position = ''; hb.style.left = ''; hb.style.top = ''; hb.style.zIndex = ''; }
 }
 function setupActGrip() {
   const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
