@@ -1266,7 +1266,7 @@ function updMon(m, dt) {
   const tn = m.d.tint || [1.14, 1.08, 1.08]; o.material.color.setRGB(tn[0], tn[1] * (1 - m.flash * 2.2), tn[2] * (1 - m.flash * 2.2));
   // 넉백 감쇠
   if (Math.abs(m.kx) + Math.abs(m.kz) > .001) { o.position.x += m.kx * dt * 4; o.position.z += m.kz * dt * 4; m.kx *= Math.pow(.02, dt); m.kz *= Math.pow(.02, dt); }
-  o.position.y = Math.max(m.fly, .06); m.shadow.position.set(o.position.x, .02, o.position.z);
+  o.position.y = m.fly ? m.fly : .06; m.shadow.position.set(o.position.x, .02, o.position.z);   // 날개 있는 몬스터만 떠 있어요
   if (m.dead) { stepAnim(m, dt); if (m.done) removeMon(m); return; }
   const x = o.position.x, z = o.position.z;
   m.ph += dt;
@@ -1332,7 +1332,7 @@ function updMon(m, dt) {
     if (dd > 0) { o.position.x += dx / dd * sp; o.position.z += dz / dd * sp; }
     setAnim(m, 'move', true); stepAnim(m, dt);
   }
-  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12;
+  if (m.fly) o.position.y = m.fly + Math.sin(m.ph * 4) * .12; else o.position.y = .06;   // 걷는 몬스터는 땅 위
 }
 function hitEnemy(m, dmg, opt) {
   if (!m || m.dead) return;
@@ -2124,7 +2124,7 @@ function setupInput() {
   { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
   [['bHit', 'A'], ['bSkill', 'S'], ['bBuild', 'D'], ['bGather', 'Z'], ['bTalk', 'X'], ['bSnipe', 'F']].forEach(([id, k]) => { $(id).dataset.key = k; });
   // 시선 회전 키 안내는 Q/E 입력 시 표시
-  $('bJump').onclick = doJump; setupActGrip();
+  $('bJump').onclick = doJump; setupHitGrip();
   $('bHit').title = '공격 (A)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
   $('bGather').title = '채집 (Z)'; $('bTalk').title = '대화/거래 (X)';
   // 화면 드래그로 카메라, 짧게 누르면 공격/건설
@@ -2146,8 +2146,8 @@ app.addEventListener('pointerdown', e => {
     if (!ptr || e.pointerId !== ptr.id) return;
     const dx = e.clientX - ptr.lx, dy = e.clientY - ptr.ly;
     if (Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) > 8) ptr.mv = true;
-    if (ptr.mv && !buildMode) { camYawT = null; camYaw -= dx * .0065; camPitch = clamp(camPitch - dy * .0045, -.9, 1.5); lastDrag = gameT; }
-    if (buildMode && !fpMode) { const p = pickGround(e.clientX, e.clientY); if (p) setBuildTarget(p.x, p.z); }
+    if (ptr.mv) { camYawT = null; camYaw -= dx * .0065; camPitch = clamp(camPitch - dy * .0045, -.9, 1.5); lastDrag = gameT; }
+    if (buildMode && !fpMode && e.pointerType === 'mouse') { const p = pickGround(e.clientX, e.clientY); if (p) setBuildTarget(p.x, p.z); }
     ptr.lx = e.clientX; ptr.ly = e.clientY;
   });
   window.addEventListener('pointerup', e => {
@@ -2779,6 +2779,21 @@ function nearPerch() {
   let best = null, bd = 2.6;
   for (const k in G.b) { if (G.b[k].t !== 'APT') continue; const [x, z] = k.split(',').map(Number); const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = k; } }
   return best;
+}
+function setupHitGrip() {   // 공격 버튼만 손잡이(✥)로 끌어서 옮겨요. 다른 버튼은 제자리에 있어요
+  const hb = $('bHit'); if (!hb) return;
+  const g = document.createElement('div'); g.id = 'hitGrip'; g.textContent = '✥';
+  g.style.cssText = 'position:fixed;z-index:7;width:24px;height:24px;border-radius:12px;background:rgba(255,250,238,.92);border:2px solid #ecd3a2;font-size:13px;font-weight:900;line-height:20px;text-align:center;touch-action:none;user-select:none;cursor:move';
+  document.body.appendChild(g);
+  const place = (l, t) => { hb.style.position = 'fixed'; hb.style.left = l + 'px'; hb.style.top = t + 'px'; hb.style.right = 'auto'; hb.style.bottom = 'auto'; hb.style.zIndex = 6; g.style.left = (l + 22) + 'px'; g.style.top = (t - 12) + 'px'; };
+  let sv = null; try { sv = JSON.parse(localStorage.getItem('farm-hit-pos') || 'null'); } catch (e) {}
+  if (sv) place(clamp(sv.l, 0, innerWidth - 80), clamp(sv.t, 0, innerHeight - 80));
+  else { const r = hb.getBoundingClientRect(); place(r.left, r.top); }
+  let gid = null, ox = 0, oy = 0, L = 0, T = 0;
+  g.addEventListener('pointerdown', e => { gid = e.pointerId; const r = hb.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; g.setPointerCapture && g.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
+  g.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; L = clamp(e.clientX - ox, 0, innerWidth - 80); T = clamp(e.clientY - oy, 0, innerHeight - 80); place(L, T); });
+  const end = e => { if (e.pointerId !== gid) return; gid = null; try { localStorage.setItem('farm-hit-pos', JSON.stringify({ l: L || parseInt(hb.style.left, 10) || 0, t: T || parseInt(hb.style.top, 10) || 0 })); } catch (x) {} };
+  g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
 }
 function setupActGrip() {
   const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
