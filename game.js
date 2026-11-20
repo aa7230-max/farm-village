@@ -3354,16 +3354,42 @@ function syncHitGrip() {   // 손잡이는 공격 버튼 오른쪽 위에 붙어
 }
 let mvDrag = null;
 function wireMovableBtn(el) {   // 버튼을 길게(끌어서) 옮길 수 있게 해요. 옮긴 위치는 기기에 저장돼요
-  try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + el.id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
+  if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + el.id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
   el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   el.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = el.getBoundingClientRect(); mvDrag = { el, id: el.id, pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false, t0: performance.now() }; });
 }
+const LAND_Q = '(orientation: landscape) and (max-height: 560px)';
+const isLand = () => window.matchMedia(LAND_Q).matches;
+const MOVABLE_IDS = ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
+function storeBaseStyles() {   // 처음 HTML에 적힌 기본 자리를 기억해요 (세로·가로 전환 때 되돌리려고)
+  MOVABLE_IDS.concat(['actions']).forEach(id => {
+    const el = document.getElementById(id); if (el && el.dataset.base === undefined) el.dataset.base = el.getAttribute('style') || '';
+  });
+}
+function layoutByOrientation() {   // 가로면 기본 배치(CSS)만 쓰고, 세로면 옮겨 둔 위치를 써요
+  storeBaseStyles();
+  const land = isLand();
+  MOVABLE_IDS.forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.setAttribute('style', el.dataset.base || '');
+    if (land) return;
+    try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) { }
+  });
+  const box = document.getElementById('actions');
+  if (box) {
+    box.setAttribute('style', box.dataset.base || '');
+    if (!land) { try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) { } }
+  }
+}
+window.addEventListener('resize', layoutByOrientation);
+window.addEventListener('orientationchange', () => setTimeout(layoutByOrientation, 200));
 function btnPlace(el, l, t) { el.style.position = 'fixed'; el.style.left = l + 'px'; el.style.top = t + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.zIndex = 6; }
 function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   const g = document.getElementById('hitGrip'); if (g) g.remove();
+  storeBaseStyles();
   ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
-    try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
+    if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
     el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     el.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = el.getBoundingClientRect(); mvDrag = { el, id, pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false, t0: performance.now() }; });
   });
@@ -3387,7 +3413,8 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
 }
 function setupActGrip() {
   const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
-  try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) {}
+  storeBaseStyles();
+  if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) {}
   let gid = null, ox = 0, oy = 0;
   grip.addEventListener('pointerdown', e => { gid = e.pointerId; const r = box.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; grip.setPointerCapture && grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
   grip.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; const l = clamp(e.clientX - ox, 0, innerWidth - box.offsetWidth), t = clamp(e.clientY - oy, 0, innerHeight - box.offsetHeight); box.style.left = l + 'px'; box.style.top = t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; });
@@ -3676,7 +3703,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.21.14';
+const APP_VERSION = '2026.11.21.15';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
