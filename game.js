@@ -1600,7 +1600,6 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
 function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을 따라 곧게 뻗어나가요. 지나가는 적을 모두 관통해요
   const cam = aimRay(), range = CLS[G.cls].rng * 2.4 + 6, mz = muzzle();
   let o = cam.o, dir = cam.d.clone();
-  if (aimOverride) { const hx = aimOverride.x - px, hz = aimOverride.z - pz, L = Math.hypot(hx, hz) || 1; dir = new THREE.Vector3(hx / L, dir.y, hz / L).normalize(); o = mz; }
   const reach = o.distanceTo(mz) + range;
   const far = o.clone().addScaledVector(dir, reach);
   const hits = [], c = new THREE.Vector3(), v = new THREE.Vector3();
@@ -2370,10 +2369,14 @@ app.addEventListener('pointerdown', e => {
   });
   const wireAttack = (id, assist) => {
     const el = $(id);
-    el.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); pointerFired = true; chargePid = e.pointerId; chargeEl = el; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist); });
+    el.addEventListener('pointerdown', e => {
+      if (e.button > 0) return; e.preventDefault(); pointerFired = true;
+      if (id === 'bPadAtk') { if (mode === 'FIELD' && !modalOpen && !buildMode) { aimOverride = null; fireLightningLine(); } return; }   // 왼쪽: 누르는 순간 조준선으로 곧장 (기 모으기·끌기 없음)
+      chargePid = e.pointerId; chargeEl = el; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist);
+    });
     const rel = () => { chargeRelease(assist); setTimeout(() => { pointerFired = false; }, 60); };
     el.addEventListener('pointerup', rel); el.addEventListener('pointercancel', rel);
-    el.onclick = () => { if (pointerFired) { pointerFired = false; return; } chargeEl = el; chargeStart(assist); chargeRelease(assist); };
+    el.onclick = () => { if (pointerFired) { pointerFired = false; return; } if (id === 'bPadAtk') { fireLightningLine(); return; } chargeEl = el; chargeStart(assist); chargeRelease(assist); };
   };
   wireAttack('bHit', false); wireAttack('bPadAtk', true);
   // 채팅 입력 · 빠른 말풍선 · 음성 입력
