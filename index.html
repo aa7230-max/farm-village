@@ -164,10 +164,43 @@ button{font-family:inherit;cursor:pointer}
 @keyframes spin{to{transform:rotate(360deg)}}
 #err{position:absolute;left:8px;right:8px;top:260px;z-index:50;background:#fff;color:#b00020;padding:8px;font:11px monospace;word-break:break-all;border:2px solid #b00020;border-radius:8px;max-height:35%;overflow:auto;display:none}
 .cdx-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cdx{background:#fffdf6;border:2px solid var(--line);border-radius:12px;padding:6px;font-size:12px}.cdx small{display:block;opacity:.7}
+
+/* ---------- 오프닝 표지 ---------- */
+#intro{position:fixed;inset:0;z-index:60;overflow:hidden;background:radial-gradient(120% 90% at 50% 0%,#ffe9b8 0%,#9fdcff 45%,#4f9a5a 100%);transition:transform .7s cubic-bezier(.6,0,.3,1),opacity .6s;touch-action:none;user-select:none}
+#intro.gone{transform:translateY(-105%);opacity:0;pointer-events:none}
+#intro .sun{position:absolute;top:-80px;left:50%;width:260px;height:260px;margin-left:-130px;border-radius:50%;background:radial-gradient(#fff8d0,#ffd36b 60%,rgba(255,211,107,0) 70%);animation:sunPulse 3.2s ease-in-out infinite}
+@keyframes sunPulse{50%{transform:scale(1.08)}}
+#intro .hills{position:absolute;bottom:0;left:0;right:0;height:38%;background:linear-gradient(#7cc56a,#4f9a4e);border-radius:60% 60% 0 0/40% 40% 0 0}
+#intro .title{position:absolute;top:13%;left:0;right:0;text-align:center;color:#fff;text-shadow:0 4px 0 #b8862a,0 8px 18px rgba(60,30,0,.4)}
+#intro .title .a{display:block;font-size:20px;font-weight:900;letter-spacing:6px;opacity:.95}
+#intro .title .b{display:block;font-size:54px;font-weight:900;line-height:1.05;background:linear-gradient(#fff8dc,#ffd34d);-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 4px 0 #b8862a)}
+#intro .title .c{display:block;margin-top:8px;font-size:14px;font-weight:800;color:#fff7d6;text-shadow:0 2px 0 rgba(0,0,0,.25)}
+#intro .sk{position:absolute;bottom:20%;width:90px;height:90px;background:url(assets/monsters/skeleton/move.png) 0 0/360px 90px no-repeat;animation:walkSk .9s steps(4) infinite,runSk 7s linear infinite;filter:drop-shadow(0 6px 4px rgba(0,0,0,.35))}
+@keyframes walkSk{from{background-position:0 0}to{background-position:-360px 0}}
+@keyframes runSk{0%{left:-120px}100%{left:110%}}
+#intro .sk2{animation-duration:.9s,11s;animation-delay:0s,-4s;bottom:24%;transform:scale(.8);opacity:.85}
+#intro .hero{position:absolute;bottom:22%;left:18%;font-size:58px;animation:bob 1.2s ease-in-out infinite;filter:drop-shadow(0 6px 4px rgba(0,0,0,.35))}
+#intro .hero2{left:auto;right:16%;font-size:50px;animation-delay:-.6s}
+@keyframes bob{50%{transform:translateY(-8px)}}
+#intro .bolt{position:absolute;top:30%;left:50%;width:6px;height:44%;margin-left:-3px;background:linear-gradient(#fff,#9fe6ff);box-shadow:0 0 14px #9fe6ff,0 0 30px #7fd0ff;clip-path:polygon(40% 0,100% 30%,55% 40%,100% 70%,30% 60%,60% 100%,0 60%,45% 45%,0 25%);opacity:0;animation:strike 3.6s ease-out infinite}
+@keyframes strike{0%,70%{opacity:0}72%{opacity:1}74%{opacity:.2}76%{opacity:1}82%,100%{opacity:0}}
+#intro .hint{position:absolute;bottom:6%;left:0;right:0;text-align:center;color:#fff;font-weight:900;font-size:16px;text-shadow:0 2px 0 rgba(0,0,0,.3);animation:hintPulse 1.4s ease-in-out infinite}
+@keyframes hintPulse{50%{opacity:.45}}
+#intro .go{position:absolute;bottom:13%;left:50%;transform:translateX(-50%);border:0;border-radius:999px;padding:12px 28px;font-size:17px;font-weight:900;color:#4a2c00;background:linear-gradient(#ffe08a,#f2b84b);box-shadow:0 5px 0 #b8862a,0 10px 18px rgba(0,0,0,.25);cursor:pointer}
 </style>
 </head>
 <body>
 <div id="app">
+<div id="intro">
+  <div class="sun"></div><div class="hills"></div>
+  <div class="bolt"></div>
+  <div class="title"><span class="a">구름이와 함께</span><span class="b">Farm Game</span><span class="c">마을을 지켜라 · 중력보석 나무를 지켜요</span></div>
+  <div class="sk"></div><div class="sk sk2"></div>
+  <div class="hero">🧙</div><div class="hero hero2">🏹</div>
+  <div class="hint">👆 화면을 쓸어올려 시작 · Swipe up</div>
+  <button class="go" id="introGo">▶ 시작하기</button>
+</div>
+
   <canvas id="c"></canvas>
   <div id="vig"></div><div id="xhair"></div>
 
@@ -347,5 +380,16 @@ button{font-family:inherit;cursor:pointer}
   <div id="err"></div>
 </div>
 <script src="game.js"></script>
+<script>
+// 오프닝: 표지를 쓸어올리거나(좌우로 밀거나) 시작 버튼을 누르면 홈 화면이 나와요
+(function(){
+  const intro = document.getElementById('intro'); if (!intro) return;
+  let sx = 0, sy = 0, down = false;
+  const open = () => { if (intro.classList.contains('gone')) return; intro.classList.add('gone'); setTimeout(() => { intro.style.display = 'none'; }, 800); };
+  intro.addEventListener('pointerdown', e => { if (e.target.closest('#introGo')) return; down = true; sx = e.clientX; sy = e.clientY; });
+  window.addEventListener('pointerup', e => { if (!down) return; down = false; const dx = e.clientX - sx, dy = e.clientY - sy; if (dy < -50 || Math.abs(dx) > 60) open(); });
+  document.getElementById('introGo').addEventListener('click', open);
+})();
+</script>
 </body>
 </html>
