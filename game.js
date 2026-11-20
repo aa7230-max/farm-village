@@ -110,15 +110,22 @@ let coreObj = null, coreRing = null, coreHalo = null, coreGem = null, coreHit = 
 function ensureCore() {
   if (coreObj || !scene) return;
   coreObj = new THREE.Group();
-  // 수정 다이아몬드를 품은 나무: 나무 몸통 + 수관, 그 한가운데 다이아몬드가 박혀 있어요
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.55, .8, 3.2, 10), new THREE.MeshLambertMaterial({ color: 0x7a5a3a }));
-  trunk.position.y = 1.6; trunk.castShadow = true; coreObj.add(trunk);
-  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 1), new THREE.MeshLambertMaterial({ color: 0x4f9a52, flatShading: true }));
-  crown.position.y = 4.2; crown.castShadow = true; coreObj.add(crown);
-  const root = new THREE.Mesh(new THREE.TorusGeometry(1.1, .12, 6, 16), new THREE.MeshLambertMaterial({ color: 0x5a4028 }));
-  root.rotation.x = -Math.PI / 2; root.position.y = .15; coreObj.add(root);
-  coreGem = new THREE.Mesh(new THREE.OctahedronGeometry(.8, 0), new THREE.MeshLambertMaterial({ color: 0xff5fd0, emissive: 0x9a1d66, flatShading: true }));
-  coreGem.position.set(0, 2.4, .6); coreObj.add(coreGem);   // 나무 줄기에 박힌 다이아몬드
+  // 수정 다이아몬드 한 개: 브릴리언트 컷(위·아래 면이 많은 다이아 모양), 빛을 받아 반짝여요
+  const prof = [[0, -1.25], [.95, -.3], [1.05, .05], [.66, .5], [.3, .62], [0, .62]].map(([r, y]) => new THREE.Vector2(r, y));
+  const cutGeo = new THREE.LatheGeometry(prof, 8);
+  coreGem = new THREE.Mesh(cutGeo, new THREE.MeshPhongMaterial({ color: 0xff8fe6, emissive: 0x7a1a6a, specular: 0xffffff, shininess: 140, flatShading: true, transparent: true, opacity: .95 }));
+  coreGem.scale.setScalar(1.05); coreGem.position.set(0, 2.4, 0); coreObj.add(coreGem);
+  // 다이아 주변을 도는 작은 반짝이 조각들
+  coreSpk = new THREE.Group(); coreSpk.position.set(0, 2.4, 0); coreObj.add(coreSpk);
+  for (let i = 0; i < 6; i++) {
+    const sh = new THREE.Mesh(new THREE.OctahedronGeometry(.16, 0), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xbff4ff : 0xffe9ff, transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const a2 = i / 6 * Math.PI * 2; sh.position.set(Math.cos(a2) * 1.9, Math.sin(i * 1.7) * .5, Math.sin(a2) * 1.9); coreSpk.add(sh);
+  }
+  // 기울어진 두 고리가 다이아를 감싸며 돌아요
+  coreRing2 = new THREE.Mesh(new THREE.TorusGeometry(1.7, .035, 6, 48), new THREE.MeshBasicMaterial({ color: 0xbff4ff, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false }));
+  coreRing2.position.set(0, 2.4, 0); coreRing2.rotation.x = Math.PI / 2.6; coreObj.add(coreRing2);
+  coreRing3 = new THREE.Mesh(new THREE.TorusGeometry(2.1, .03, 6, 48), new THREE.MeshBasicMaterial({ color: 0xffd0f5, transparent: true, opacity: .6, blending: THREE.AdditiveBlending, depthWrite: false }));
+  coreRing3.position.set(0, 2.4, 0); coreRing3.rotation.z = Math.PI / 3; coreObj.add(coreRing3);
   coreRing = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.2, 48), new THREE.MeshBasicMaterial({ color: 0xff8fe0, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false }));
   coreRing.rotation.x = -Math.PI / 2; coreRing.position.y = .06; coreObj.add(coreRing);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(.18, .18, 9, 8), new THREE.MeshBasicMaterial({ color: 0xffb3ec, transparent: true, opacity: .3, depthWrite: false }));
@@ -127,7 +134,7 @@ function ensureCore() {
   coreHalo.scale.set(7, 7, 1); coreHalo.position.y = 2.4; coreHalo.position.z = .6; coreObj.add(coreHalo);
   scene.add(coreObj);
 }
-let crackGroup = null, lastCoreFx = 0;
+let crackGroup = null, lastCoreFx = 0, coreSpk = null, coreRing2 = null, coreRing3 = null;
 function coreHitFx() {   // 보석이 맞으면 번쩍, 흔들림, 금 가기, 불꽃
   if (!coreGem || performance.now() - lastCoreFx < 280) return; lastCoreFx = performance.now();
   tweenTo(1.22, 1, .28, v => coreGem.scale.setScalar(v), 'back');
@@ -147,6 +154,9 @@ function coreHitFx() {   // 보석이 맞으면 번쩍, 흔들림, 금 가기, �
 function coreAnim(t) {
   if (!coreObj) return;
   coreGem.rotation.y = t * .9; coreGem.position.y = 2.4 + Math.sin(t * 2) * .2;
+  if (coreSpk) { coreSpk.rotation.y = t * 1.4; coreSpk.position.y = 2.4 + Math.sin(t * 2) * .2; }
+  if (coreRing2) { coreRing2.rotation.z = t * .9; coreRing2.position.y = coreGem.position.y; }
+  if (coreRing3) { coreRing3.rotation.x = t * .5; coreRing3.position.y = coreGem.position.y; }
   const p = Math.sin(t * 3);
   coreHalo.material.opacity = .6 + p * .2; coreRing.material.opacity = .5 + p * .25; coreRing.scale.setScalar(1 + p * .03);
   coreGem.material.emissive.setRGB(coreHit > 0 ? .8 : .6, .1, .4);
