@@ -18,7 +18,7 @@ const LAKE = { x: -17, z: -11, r: 4.6 }, MAYOR = { x: 3, z: -3 };
 const RUN_KEY = 'farm-v5-run', PROF_KEY = 'farm-v5-profile', SET_KEY = 'farm-v5-set';
 
 const CLS = {
-  mage:    { name: '마법사', icon: '🧙', skill: '⚡ 번개 체인', short: '⚡ 낙뢰', cd: 6, rng: 4.6, rate: .75, dmg: 1.0, skillName: 'chain' },
+  mage:    { name: '마법사', icon: '🧙', skill: '☄ 운석 낙하', short: '☄ 운석', cd: 6, rng: 4.6, rate: .75, dmg: 1.0, skillName: 'chain' },
   archer:  { name: '궁수',   icon: '🏹', skill: '🏹 불화살',   short: '🔥 불화살', cd: 8, rng: 5.6, rate: .85, dmg: .9,  skillName: 'rain' },
   warrior: { name: '전사',   icon: '⚔',  skill: '🌀 꼬리치기', short: '🌀 꼬리치기', cd: 7, rng: 2.4, rate: .6,  dmg: 1.25, skillName: 'spin' }
 };
@@ -1791,7 +1791,56 @@ function updXSkillsCd() {
 }
 function useSkill() {
   if (mode !== 'FIELD' || skillCd > 0 || modalOpen) return;
-  if (G.cls === 'archer') fireArrowRain(); else if (G.cls === 'warrior') tailSweep(); else lightningStorm();
+  if (G.cls === 'archer') fireArrowRain(); else if (G.cls === 'warrior') tailSweep(); else meteorStrike();
+}
+// 운석 낙하: 불타는 돌이 하늘에서 떨어져 주변을 쓸어요. 맞은 적은 크게 다쳐요
+function meteorStrike() {
+  if (mode !== 'FIELD' || modalOpen) return;
+  const k = skillDmgMul(), R = 6.5 + G.skillLv * .6, N = 9 + G.skillLv * 2, dmg = (6 + G.skillLv * 1.5) * k;
+  const cx = px, cz = pz;
+  const warn = new THREE.Mesh(new THREE.RingGeometry(R - .15, R, 64), new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: .75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  warn.rotation.x = -Math.PI / 2; warn.position.set(cx, .07, cz); scene.add(warn);
+  tweenTo(.75, .3, 1.4, v => { warn.material.opacity = v; }, 'out', 0, () => { scene.remove(warn); warn.material.dispose(); warn.geometry.dispose(); });
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
+    const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+    tweenTo(0, 1, .001, () => {}, 'out', .3 + i * (1.0 / N) + rnd(0, .06), () => dropMeteor(x, z, dmg));
+  }
+  sfx('skill'); vib('hit'); hitStop(.05); toast('☄ 운석 낙하!');
+  skillCd = Math.max(3, CLS[G.cls].cd * (1 - .15 * G.up.cd)) * (G.promo === 'b' ? .7 : 1);
+  persistRun();
+}
+function dropMeteor(x, z, dmg) {   // 불붙은 돌이 하늘에서 떨어져요
+  const geo = new THREE.DodecahedronGeometry(.42, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6b5a48, emissive: 0xff5a1f, emissiveIntensity: 1.3, flatShading: true });
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, 16, z); m.castShadow = true; scene.add(m);
+  tweenTo(16, .4, .6, v => {
+    m.position.y = v; m.rotation.x += .25; m.rotation.z += .18;
+    glowAt(x, v + .3, z, 1.1, 0xff7a2a, .2);   // 불꼬리
+  }, 'in', 0, () => {
+    scene.remove(m); geo.dispose(); mat.dispose();
+    impactMeteor(x, z, dmg);
+  });
+}
+function impactMeteor(x, z, dmg) {
+  glowAt(x, .6, z, 3.6, 0xffb347, .5);
+  glowAt(x, .4, z, 2.2, 0xff5a1f, .4);
+  scorchAt(x, z, 1.5);
+  puff(x, z, 16, 0xff8a3d);
+  hitFx(.4); hitStop(.04); sfx('skill'); vib('hit');
+  for (let i = 0; i < 10; i++) {   // 불씨가 사방으로 튀어요
+    const sp = new THREE.Mesh(new THREE.SphereGeometry(.08, 6, 5), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffb347 : 0xff5a1f, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    sp.position.set(x, .3, z); scene.add(sp);
+    const a = rnd(0, Math.PI * 2), out = rnd(1.2, 2.6), up = rnd(1, 2.4);
+    tweenTo(0, 1, .6, v => { sp.position.set(x + Math.cos(a) * out * v, .3 + up * v - 2 * v * v, z + Math.sin(a) * out * v); sp.material.opacity = 1 - v; }, 'out', 0, () => { scene.remove(sp); sp.geometry.dispose(); sp.material.dispose(); });
+  }
+  let hits = 0;
+  mons.slice().forEach(m => {
+    if (m.dead) return;
+    if (Math.hypot(m.obj.position.x - x, m.obj.position.z - z) < 2.2) { hitEnemy(m, dmg * (m.boss ? 1 : 1.5), { kb: 1.8 }); hits++; }
+  });
+  breakNodesAt(x, z, 2.2);
+  if (hits) toast('☄ 운석에 맞은 적 ' + hits + '마리!');
 }
 function setSkillCd() { const c = CLS[G.cls]; skillCd = Math.max(3, c.cd * (1 - .15 * G.up.cd)) * (G.promo === 'b' ? .7 : 1); persistRun(); }
 function lightningStorm() {
