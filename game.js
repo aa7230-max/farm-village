@@ -2353,6 +2353,11 @@ function setupInput() {
   { const bs = document.createElement('button'); bs.id = 'bSnipe'; bs.className = 'rb skill hide-btn'; bs.innerHTML = '<span id="snipeTxt">🎯 저격</span>'; bs.title = '저격 (F)'; $('bSkill').insertAdjacentElement('afterend', bs); bs.onclick = toggleSniper; }
   [['bHit', 'A'], ['bSkill', 'S'], ['bBuild', 'D'], ['bGather', 'Z'], ['bTalk', 'X'], ['bSnipe', 'F']].forEach(([id, k]) => { $(id).dataset.key = k; });
   // 시선 회전 키 안내는 Q/E 입력 시 표시
+  // 건축 중에 다른 버튼을 누르면 건축 모드가 꺼져요
+  ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bTalk', 'bGather', 'bUp', 'bSnipe', 'pause', 'topTog', 'bFp', 'bXh', 'bRunLock', 'bCodex'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.addEventListener('pointerdown', () => { if (buildMode) { buildMode = false; $('palette').style.display = 'none'; $('bBuild').classList.remove('on'); $('bBuild').textContent = '🔨 건설'; ghost.visible = false; if (ghostB) ghostB.visible = false; } }, true);
+  });
   $('bJump').addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); doJump(); });
   $('bJump').onclick = () => {}; setupHitGrip();
   $('bHit').title = '공격 (A)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
