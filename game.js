@@ -1038,19 +1038,33 @@ function spawnMon(kind, boss) {
   mons.push(m); puff(x, z, 6, 0xd9f0c0);
   if (boss) { bossRef = m; $('bossBar').style.display = 'block'; $('bossName').textContent = BOSS[kind].name + ' · ' + G.day + '일차'; sfx('boss'); vib('boss'); }
 }
-function lampBlast(bx, bz) {   // 전등이 부서지면 주변이 폭발해요
+function electricBurst(bx, bz, R, n) {   // 전기 아크가 사방으로 튀어요
+  const cy = 1.9;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + rnd(-.25, .25), rr = R * rnd(.65, 1);
+    bolt([new THREE.Vector3(bx, cy, bz), new THREE.Vector3(bx + Math.cos(a) * rr, rnd(.3, 1.1), bz + Math.sin(a) * rr)], 0x6fe0ff);
+  }
+  glowAt(bx, cy, bz, R * 1.5, 0xd8f8ff, .35);
+}
+function lampBlast(bx, bz) {   // 전등이 부서지면 전기가 크게 터지고, 주변 적과 건물이 맞아요
   const R = 2.6;
-  glowAt(bx, .8, bz, 4.2, 0xffb347, .45); puff(bx, bz, 18, 0xffc070); hitFx(.5); hitStop(.07); sfx('boss');
+  electricBurst(bx, bz, R * 1.2, 12); electricBurst(bx, bz, R * .6, 6);
+  hitFx(.5); hitStop(.07); sfx('boss');
   for (const k2 of Object.keys(G.b)) {
     const [x2, z2] = k2.split(',').map(Number);
     if (G.b[k2] && G.b[k2].t !== 'LAMP' && Math.hypot(x2 - bx, z2 - bz) <= R) hurtBuildingAt(k2, 4, null);
   }
   for (const m of mons.slice()) if (!m.dead && Math.hypot(m.obj.position.x - bx, m.obj.position.z - bz) <= R) hitEnemy(m, m.boss ? 30 : 9999, { kb: 1.4 });
-  toast('💥 전등이 폭발했어요!');
+  toast('⚡ 전등이 전기 폭발을 일으켰어요!');
 }
-function hurtBuildingAt(k, dmg, m) {
+function lampZap(k) {   // 공격이 전등에 닿으면 전기가 튀고, 조금씩 부서져요
+  const [bx, bz] = k.split(',').map(Number);
+  electricBurst(bx, bz, 1.6, 4); sfx('hit'); hitFx(.12);
+  hurtBuildingAt(k, 2, null, true);
+}
+function hurtBuildingAt(k, dmg, m, zap) {
   const b = G.b[k]; if (!b) return;
-  if (b.t === 'LAMP') dmg = 1;   // 전등은 10번 맞으면 부서져요
+  if (b.t === 'LAMP') dmg = zap ? 2 : 1;   // 전등은 적에게 10번, 플레이어 공격에는 5번 맞으면 부서져요
   b.hp -= dmg;
   const mesh = bmesh[k]; if (mesh) tweenTo(1.08, 1, .2, v => mesh.scale.set(v, 1 / v, v), 'out');
   const [bx, bz] = k.split(',').map(Number);
@@ -1706,12 +1720,22 @@ function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을
     if (t < 0 || t > reach) continue;
     if (v.clone().addScaledVector(dir, -t).length() < .8 + t * .06) hits.push({ m, t });
   }
+  const lampHits = [];
+  for (const k of Object.keys(G.b)) {   // 조준선에 전등이 걸리면 전기가 튀어요
+    if (!G.b[k] || G.b[k].t !== 'LAMP') continue;
+    const [lx, lz] = k.split(',').map(Number);
+    c.set(lx, 1.6, lz); v.copy(c).sub(o);
+    const t = v.dot(dir);
+    if (t < 0 || t > reach) continue;
+    if (v.clone().addScaledVector(dir, -t).length() < 1 + t * .05) lampHits.push(k);
+  }
   hits.sort((a, b) => a.t - b.t);
   const col = G.cls === 'archer' ? 0xfff1a0 : 0x9fe6ff;
   sendFx(0, mz, { x: far.x, z: far.z });
   throwOrb(mz, far, 0, () => {
     bolt([mz.clone(), far.clone()], col);
     for (const h of hits) if (!h.m.dead) hitEnemy(h.m, h.m.boss ? baseHit(h.m) * 2 : 9999, { kb: .4 });
+    for (const k of lampHits) lampZap(k);
     breakNodesAt(far.x, far.z, 1.1);
     sfx('skill'); hitFx(.1);
   }, G.cls, true);
