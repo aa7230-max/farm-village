@@ -3906,11 +3906,11 @@ setupShop();
 /* ================= 아파트 대결: 힘 게이지로 상대 아파트에 번개 맞히기 (AI 상대) ================= */
 const DUEL_DIFF = { '쉬움': { err: .2, perr: .18, think: 2.4 }, '보통': { err: .11, perr: .1, think: 1.7 }, '어려움': { err: .05, perr: .05, think: 1.1 } };
 const DUEL_WIN_HITS = 5, DUEL_MAX_LV = 5, DUEL_CYCLE = 1.5;
-const DUEL = { open: false, lv: 1, diff: '보통', cv: null, g: null, W: 0, H: 0, geo: null, stars: [], turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .6, shot: null, shooter: null, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0, wrap: null };
+const DUEL = { open: false, lv: 1, rule: null, wind: 0, moving: false, mt: 0, diff: '보통', cv: null, g: null, W: 0, H: 0, geo: null, stars: [], turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .6, shot: null, shooter: null, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0, wrap: null };
 function duelGeo() {
   const W = DUEL.W, H = DUEL.H, gy = H * .8, ah = H * .24, aw = Math.min(W * .1, 96), top = gy - ah;
   const sep = .6 + .05 * (DUEL.lv - 1);   // 레벨이 오를수록 두 아파트 사이 간격이 넓어져요 (.6 → .8)
-  return { me: { x: W * (.5 - sep / 2), top, gy, aw, ah }, ai: { x: W * (.5 + sep / 2), top, gy, aw, ah }, maxR: W * .9 };
+  return { me: { x: W * (.5 - sep / 2), top, gy, aw, ah }, ai: { x: W * (.5 + sep / 2), top, gy, aw, ah, base: top }, maxR: W * .9 };
 }
 // 발사 경로: 각도(ang)와 힘(pow, 0~100)으로 끝점을 계산해요. 'me'는 오른쪽, 'ai'는 왼쪽으로 쏩니다
 function duelPath(shooter, ang, pow) {
@@ -3924,13 +3924,34 @@ function duelJudge(shooter, ex, ey) {
   return { hit, perfect };
 }
 function duelMsg(t) { DUEL.msg = t; DUEL.msgT = 1.8; }
+// ===== 4레벨부터 룰이 하나씩 랜덤으로 붙어요: 바람 / 움직이는 아파트 / 가운데 건물 =====
+function duelObs() { const W = DUEL.W, H = DUEL.H, gy = H * .8; return { x: W * .47, w: W * .06, top: gy - H * .3, bottom: gy }; }
+function duelWindPx() { return DUEL.rule === 'wind' ? DUEL.wind * DUEL.W * .05 : 0; }
+function duelRuleName() { return DUEL.rule === 'wind' ? '바람 ' + (DUEL.wind > 0 ? '→' : '←') : DUEL.rule === 'moving' ? '상대 아파트가 위아래로 움직여요' : DUEL.rule === 'obstacle' ? '가운데 건물이 있어요' : ''; }
+function duelPickRule() {
+  DUEL.rule = null; DUEL.wind = 0; DUEL.moving = false;
+  if (DUEL.lv < 4) return;
+  DUEL.rule = ['wind', 'moving', 'obstacle'][Math.floor(Math.random() * 3)];
+  if (DUEL.rule === 'wind') DUEL.wind = (Math.random() < .5 ? -1 : 1) * (.5 + Math.random() * .5);
+  if (DUEL.rule === 'moving') DUEL.moving = true;
+}
 function duelFire(shooter, ang, pow) {
-  const p = duelPath(shooter, ang, pow), j = duelJudge(shooter, p.ex, p.ey);
+  const p = duelPath(shooter, ang, pow);
+  p.ex += duelWindPx();   // 바람이 번개를 옆으로 밀어요
+  let blocked = false;
+  const ob = DUEL.rule === 'obstacle' ? duelObs() : null;
+  if (ob) {   // 건물에 부딪히면 거기서 멈춰요
+    for (let i = 1; i <= 60; i++) {
+      const f = i / 60, x = p.ox + (p.ex - p.ox) * f, y = p.oy + (p.ey - p.oy) * f;
+      if (x >= ob.x && x <= ob.x + ob.w && y >= ob.top) { p.ex = x; p.ey = y; blocked = true; break; }
+    }
+  }
+  const j = blocked ? { hit: false, perfect: false, blocked: true } : duelJudge(shooter, p.ex, p.ey);
   DUEL.shot = Object.assign(p, j, { shooter, t: 0 }); DUEL.shooter = shooter; DUEL.phase = 'shot'; DUEL.hold = false;
   sfx('skill'); hitFx(.12);
 }
 function duelAiShoot() {
-  const cfg = DUEL_DIFF[DUEL.diff], g = DUEL.geo, o = g.ai, tx = g.me.x, ty = g.me.top + g.me.ah / 2;
+  const cfg = DUEL_DIFF[DUEL.diff], g = DUEL.geo, o = g.ai, tx = g.me.x - duelWindPx(), ty = g.me.top + g.me.ah / 2;
   const vx = tx - o.x, vy = ty - o.top, dist = Math.hypot(vx, vy);
   const a = Math.atan2(-vy, Math.abs(vx)) + (Math.random() * 2 - 1) * cfg.err;
   const pw = dist / g.maxR * 100 * (1 + (Math.random() * 2 - 1) * cfg.perr);
@@ -3938,7 +3959,8 @@ function duelAiShoot() {
 }
 function duelAfterShot() {
   const s = DUEL.shot;
-  if (s.hit) { DUEL.hits[s.shooter]++; duelMsg(s.perfect ? '💥 완벽! 정확히 꽂혔어요' : (s.shooter === 'me' ? '⚡ 명중!' : '😈 상대가 명중시켰어요')); vib('hit'); }
+  if (s.blocked) duelMsg('🏢 건물에 막혔어요!');
+  else if (s.hit) { DUEL.hits[s.shooter]++; duelMsg(s.perfect ? '💥 완벽! 정확히 꽂혔어요' : (s.shooter === 'me' ? '⚡ 명중!' : '😈 상대가 명중시켰어요')); vib('hit'); }
   else duelMsg(s.shooter === 'me' ? '빗나갔어요…' : '상대가 빗나갔어요!');
   if (DUEL.hits[s.shooter] >= DUEL_WIN_HITS) { DUEL.over = true; DUEL.win = s.shooter; DUEL.phase = 'done'; duelFinish(); return; }
   DUEL.turn = s.shooter === 'me' ? 'ai' : 'me';
@@ -3962,6 +3984,7 @@ function duelReset() {
 }
 function duelUpdate(dt) {
   if (DUEL.msgT > 0) DUEL.msgT -= dt;
+  if (DUEL.moving && DUEL.geo) { DUEL.mt += dt; const g = DUEL.geo.ai; g.top = g.base - (1 - Math.cos(DUEL.mt * 1.4)) / 2 * DUEL.H * .08; }
   if (DUEL.hold) { DUEL.holdT += dt; const t = (DUEL.holdT % DUEL_CYCLE) / DUEL_CYCLE; DUEL.pow = (t < .5 ? t * 2 : 2 - t * 2) * 100; }
   if (DUEL.phase === 'shot') { DUEL.shot.t += dt; if (DUEL.shot.t >= .5) duelAfterShot(); }
   else if (DUEL.phase === 'ai') { DUEL.aiT -= dt; if (DUEL.aiT <= 0) duelAiShoot(); }
@@ -3988,10 +4011,12 @@ function duelDraw() {
   c.globalAlpha = 1;
   c.fillStyle = '#3c7a4b'; c.fillRect(0, g.me.gy, W, H - g.me.gy);
   c.fillStyle = '#2d5e39'; c.fillRect(0, g.me.gy, W, 6);
+  if (DUEL.rule === 'obstacle') { const o = duelObs(); c.fillStyle = '#5a4a6a'; c.strokeStyle = '#2a1f33'; c.lineWidth = 3; c.fillRect(o.x, o.top, o.w, o.bottom - o.top); c.strokeRect(o.x, o.top, o.w, o.bottom - o.top); }
   duelApt(c, g.me, '#ffe08a', '나', DUEL_WIN_HITS - DUEL.hits.ai, true);
   duelApt(c, g.ai, '#f5a3c7', 'AI', DUEL_WIN_HITS - DUEL.hits.me, false);
   c.font = '800 14px system-ui,sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff';
   c.fillText('⚔ Lv.' + DUEL.lv + ' · ' + DUEL_WIN_HITS + '번 맞히면 승리 · 난이도 ' + DUEL.diff, W / 2, 26);
+  if (DUEL.rule) { c.fillStyle = '#ffd166'; c.font = '800 13px system-ui,sans-serif'; c.fillText('룰: ' + duelRuleName(), W / 2, 46); }
   if (DUEL.hold && DUEL.turn === 'me') {   // 조준선: 누르고 있는 동안 방향과 힘에 따라 길이가 변해요
     const p = duelPath('me', DUEL.ang, DUEL.pow);
     c.setLineDash([8, 8]); c.strokeStyle = 'rgba(159,243,255,.85)'; c.lineWidth = 3;
@@ -4042,8 +4067,8 @@ function duelTopBar() {
 }
 function duelNext() {
   DUEL.lv = Math.min(DUEL_MAX_LV, DUEL.lv + 1);
-  DUEL.geo = duelGeo(); duelTopBar(); duelReset();
-  duelMsg('Lv.' + DUEL.lv + ' 시작! 거리가 더 멀어졌어요');
+  DUEL.geo = duelGeo(); duelPickRule(); duelTopBar(); duelReset();
+  duelMsg('Lv.' + DUEL.lv + ' 시작!' + (DUEL.rule ? ' 새 룰: ' + duelRuleName() : ' 거리가 더 멀어졌어요'));
 }
 function duelLoop(now) {
   if (!DUEL.open) return;
@@ -4076,7 +4101,7 @@ function openDuel() {
   const release = () => { if (DUEL.hold) duelFire('me', DUEL.ang, DUEL.pow); };
   cv.addEventListener('pointerup', release); cv.addEventListener('pointercancel', release);
   window.addEventListener('resize', duelResize);
-  DUEL.lv = 1; duelTopBar(); duelResize(); duelReset();
+  DUEL.lv = 1; duelTopBar(); duelResize(); duelPickRule(); duelReset();
   DUEL.last = performance.now(); DUEL.raf = requestAnimationFrame(duelLoop);
 }
 function closeDuel() {
