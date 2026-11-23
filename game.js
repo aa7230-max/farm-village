@@ -1274,11 +1274,29 @@ function hurtPlayer(d, src) {
   if (player) tweenTo(.8, 1, .3, v => player.scale.setScalar(v), 'back');   // 몸이 찌그러졌다 돌아와요
   if (G.hp <= 0) { popup(px, py + 2.4, pz, '쓰러짐', '#ff5a5a'); playerDown(); }
 }
-// 체력이 0이 되면 보석(다이아)이 깨지고 모험이 끝나요 (방장·친구 모두 같은 결과)
+// 체력이 0이 되면 보석(다이아)이 깨져요.
+// 방에 살아 있는 친구가 있으면 쓰러진 채로 기다리다가 다음 스테이지를 클리어하면 절반 체력으로 살아나요.
+// 혼자이거나 모두 쓰러지면 모험이 끝나요.
+function friendsAlive() {
+  if (!NET.ch) return 0;
+  let n = 0; const st = NET.ch.presenceState();
+  for (const k in st) { if (k === NET.me) continue; const e = (st[k] || [])[0]; if (e && !e.d) n++; }
+  return n;
+}
 function playerDown() {
   if (G.down) return;
-  G.down = true; freeze = true; modalOpen = true; sfx('boss'); vib('boss'); screenFlash('rgba(255,80,80,1)', .6, .8);
-  G.res.gems = 0; persistRun();
+  const coop = friendsAlive() > 0;
+  G.down = true; if (!coop) freeze = true; sfx('boss'); vib('boss'); screenFlash('rgba(255,80,80,1)', .6, .8);
+  G.res.gems = 0; persistRun(); trackMe();
+  if (coop) {
+    modalOpen = false;
+    const ov = document.createElement('div'); ov.id = 'downOv';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(10,8,20,.7);display:flex;align-items:center;justify-content:center;padding:20px;pointer-events:none';
+    ov.innerHTML = '<div style="background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:22px 26px;text-align:center;font-weight:900;color:#4a3320;max-width:320px"><div style="font-size:48px">💎💥</div><div style="font-size:20px;margin:6px 0">쓰러졌어요</div><div style="font-size:13px;font-weight:700">보석이 깨졌어요. 친구가 다음 스테이지를 클리어하면 다시 일어나요.</div></div>';
+    document.body.appendChild(ov);
+    return;
+  }
+  modalOpen = true;
   const ov = document.createElement('div'); ov.id = 'downOv';
   ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(10,8,20,.8);display:flex;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML = '<div style="background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:22px 26px;text-align:center;font-weight:900;color:#4a3320;max-width:320px"><div style="font-size:48px">💎💥</div><div style="font-size:20px;margin:6px 0">보석이 깨졌어요</div><div style="font-size:13px;font-weight:700;margin-bottom:14px">캐릭터가 쓰러져서 모험이 끝났어요.</div></div>';
@@ -2571,6 +2589,11 @@ function dawn() {
   bossRef = null; $('bossBar').style.display = 'none';
   if (G.day === 10) spaceFx('finale');
   G.day += 1; mapExpand(); applyStageTheme();
+  if (G.down) {   // 쓰러졌던 캐릭터가 스테이지 클리어와 함께 절반 체력으로 살아나요
+    G.down = false; freeze = false; G.hp = Math.max(1, Math.ceil(G.maxHp / 2));
+    const dov = $('downOv'); if (dov) dov.remove();
+    toast('💚 친구 덕분에 다시 일어났어요!'); trackMe();
+  }
   stageBanner(`☀ ${G.day - 1}일차 클리어!`, `${G.day}일차 아침이 밝았어요`);
   screenFlash('#ffe9a0', .45, .9); glowAt(px, 2.5, pz, 9, 0xffe9a0, 1.2); hitStop(.1);
   weather = 'clear';
@@ -3135,7 +3158,7 @@ function makeRoomCode() {
 }
 // 방 명단(presence)에 실리는 정보: 이름, 입장 순서, 방장 여부, 모험 시작 여부
 function presenceMeta() {
-  return { n: (profile.nick || '모험가').slice(0, 10), at: NET.at || Date.now(), h: NET.host ? 1 : 0, g: (G && running) ? 1 : 0, r: NET.ready ? 1 : 0 };
+  return { n: (profile.nick || '모험가').slice(0, 10), at: NET.at || Date.now(), h: NET.host ? 1 : 0, g: (G && running) ? 1 : 0, r: NET.ready ? 1 : 0, d: (G && G.down) ? 1 : 0 };
 }
 function trackMe() { if (NET.ch) NET.ch.track(presenceMeta()); }
 function showLobby() { LOBBY.open = true; $('lobbyModal').classList.add('show'); renderLobby(); }
@@ -3613,7 +3636,7 @@ function tick(now) {
   let ix = joy.x + (!lookMode && keys.arrowright ? 1 : 0) - (!lookMode && keys.arrowleft ? 1 : 0);
   let iz = joy.z + (!lookMode && keys.arrowdown ? 1 : 0) - (!lookMode && keys.arrowup ? 1 : 0);
   const il = Math.hypot(ix, iz); const inMag = Math.min(1, il);
-  const canMove = running && mode === 'FIELD' && !modalOpen && !freeze;
+  const canMove = running && mode === 'FIELD' && !modalOpen && !freeze && !(G && G.down);
   let tvx = 0, tvz = 0;
   if (canMove && inMag > .05) {
     const nx = ix / (il || 1), nz = iz / (il || 1);
