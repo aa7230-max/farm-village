@@ -3543,15 +3543,17 @@ function scopeTarget() {
 }
 function sniperAim() {
   if (scopeOn()) { const st = scopeTarget(); if (st) return st; }
-  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); let best = null, bc = .93;
+  // 옥상에서는 조준이 쉽도록: 넓은 시야각(약 37도), 긴 사거리, 그래도 없으면 가까운 적을 자동으로 골라요
+  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw); let best = null, bc = .8, near = null, nd = 22;
   for (const m of mons) {
     if (m.dead) continue;
     const dx = m.obj.position.x - px, dz = m.obj.position.z - pz, d = Math.hypot(dx, dz);
-    if (d < 1 || d > 30) continue;
+    if (d < 1 || d > 40) continue;
     const c = (dx * fx + dz * fz) / d;
     if (c > bc) { bc = c; best = m; }
+    if (d < nd) { nd = d; near = m; }
   }
-  return best;
+  return best || near;
 }
 function updateSniperAim(dt) {
   snipeCd = Math.max(0, snipeCd - dt);
@@ -3794,7 +3796,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.5';
+const APP_VERSION = '2026.11.23.6';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
