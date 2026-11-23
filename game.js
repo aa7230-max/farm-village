@@ -29,7 +29,8 @@ const BUILD = {
   MINE:  { wood: 7, stone: 7, name: '광산', hp: 24 },
   WALL:  { wood: 2, stone: 3, name: '성벽', hp: 45 },
   LAMP:  { wood: 2, stone: 2, name: '전등', hp: 10 },
-  TRAP:  { wood: 3, stone: 3, name: '가시 덫', hp: 10 }
+  TRAP:  { wood: 3, stone: 3, name: '가시 덫', hp: 10 },
+  WEAVE: { wood: 6, stone: 4, fiber: 5, name: '직조 집', hp: 24 }
 };
 const MODEL3D = {};   // 3D 동물 모델 (펫·적)
 const MON = {
@@ -917,7 +918,7 @@ function makeBuilding(tp, x, z, lv) {
     const gems = new THREE.Group(); gems.position.set(0, h + .25, 0); g.add(gems);
     for (let i = 0; i < 3; i++) { const c = new THREE.Mesh(GEM_GEO, GEM_MAT); c.position.set((i - 1) * .3, 0, 0); c.visible = false; gems.add(c); }
     g.userData.gems = gems; g.userData.gemY = h + .25;
-  } else if (tp === 'HOUSE') {
+  } else if (tp === 'HOUSE' || tp === 'WEAVE') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 1.3), new THREE.MeshLambertMaterial({ color: WALLS[Math.abs(x * 3 + z * 5) % WALLS.length] })); body.position.y = .55;
     const roof = new THREE.Mesh(new THREE.ConeGeometry(1.2, .9, 4), new THREE.MeshLambertMaterial({ color: 0xd9765f })); roof.position.y = 1.55; roof.rotation.y = Math.PI / 4;
     const door = new THREE.Mesh(new THREE.BoxGeometry(.35, .6, .06), new THREE.MeshLambertMaterial({ color: 0x8d6b4f })); door.position.set(0, .3, .67);
@@ -1528,7 +1529,7 @@ function netUpdate(dt) {
 
 /* ================= 길찾기 · 벽 ================= */
 let FN = 2 * LIM + 1, DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const BLOCKING = { HOUSE: 1, TOWER: 1, APT: 1, MINE: 1, WALL: 1 };
+const BLOCKING = { HOUSE: 1, TOWER: 1, APT: 1, MINE: 1, WALL: 1, WEAVE: 1 };
 let flowD = new Float32Array(FN * FN), flowT = 0;
 const inGrid = (x, z) => x >= -LIM && x <= LIM && z >= -LIM && z <= LIM;
 function computeFlow() {
@@ -2674,8 +2675,8 @@ function refreshGhostB() {
   ghostB.traverse(o => { if (o.isMesh) { const m = o.material.clone(); m.transparent = true; m.opacity = .5; m.depthWrite = false; o.material = m; ghostMats.push(m); o.castShadow = false; o.receiveShadow = false; } });
   ghostB.visible = false; scene.add(ghostB);
 }
-function canPay(c) { return G.res.wood >= c.wood && G.res.stone >= (c.stone || 0); }
-function pay(c) { G.res.wood -= c.wood; G.res.stone -= (c.stone || 0); }
+function canPay(c) { return G.res.wood >= c.wood && G.res.stone >= (c.stone || 0) && (G.res.fiber || 0) >= (c.fiber || 0); }
+function pay(c) { G.res.wood -= c.wood; G.res.stone -= (c.stone || 0); G.res.fiber -= (c.fiber || 0); }
 function placeAt(x, z) {
   if (!buildTarget) return;
   if (Math.abs(x) > BUILD_R || Math.abs(z) > BUILD_R) { toast('이 땅에는 지을 수 없어요.'); return; }
@@ -2683,6 +2684,7 @@ function placeAt(x, z) {
   if (Math.hypot(x - MAYOR.x, z - MAYOR.z) < 1.5 || Math.hypot(x - px, z - pz) < 1.1) { toast('이 자리에는 지을 수 없어요.'); return; }
   if (selType !== 'REMOVE' && (Math.hypot(x, z) < 4.3 || (selType === 'APT' && Math.hypot(x + 3.5, z) < 4.6))) { toast('보석 근처에는 지을 수 없어요.'); return; }
   if (selType === 'MINE' && Object.values(G.b).filter(b => b.t === 'MINE').length >= 3) { toast('광산은 최대 3개까지 지을 수 있어요.'); return; }
+  if (selType === 'WEAVE' && Object.values(G.b).filter(b => b.t === 'WEAVE').length >= 3) { toast('직조 집은 최대 3개까지 지을 수 있어요.'); return; }
   if (selType === 'MOVE') {   // 🚚 전등 옮기기: 전등을 집고, 원하는 빈 땅에 내려놓아요
     if (!G.carry) {
       if (!G.b[k] || G.b[k].t !== 'LAMP') { toast('옮길 전등을 눌러 주세요.'); return; }
@@ -2710,7 +2712,7 @@ function placeAt(x, z) {
   }
   if (G.b[k]) { toast('이미 지어진 땅이에요. 🧹로 먼저 철거하세요.'); return; }
   const c = BUILD[selType];
-  if (!canPay(c)) { toast(`재료가 부족해요. 🪵${c.wood} 🪨${c.stone} 필요해요.`); return; }
+  if (!canPay(c)) { toast(`재료가 부족해요. 🪵${c.wood} 🪨${c.stone}${c.fiber ? ' 🌿' + c.fiber : ''} 필요해요.`); return; }
   pay(c);
   const b = { t: selType, hp: c.hp + relicCount('stone') * 10, g: 0 }; G.b[k] = b;
   netSend('build', { k, t: selType, hp: b.hp });
@@ -3746,6 +3748,9 @@ function tick(now) {
             if (spk) tweenTo(.35, 1, .1, v => spk.scale.y = v, 'out', 0, () => tweenTo(1, .35, .35, v => spk.scale.y = v, 'in'));
           } else b.cd = .15;
         }
+      } else if (b.t === 'WEAVE') {
+        b.tw = (b.tw || 0) + dt;
+        if (b.tw >= 14 / (1 + .3 * ((b.lv || 1) - 1))) { b.tw = 0; G.res.fiber = (G.res.fiber || 0) + (b.lv || 1); puff(bx, bz, 4, 0xfff0c0); toast('🌿 직조 집에서 섬유를 짰어요'); persistRun(); }
       } else if (b.t === 'MINE') {
         b.tm = (b.tm || 0) + dt;
         if (b.tm >= 11 / (1 + .4 * ((b.lv || 1) - 1))) { b.tm = 0; G.res.gems += (b.lv || 1) + relicCount('charm'); puff(bx, bz, 5, 0xa6e6ff); toast('💎 광산에서 보석을 캤어요!'); persistRun(); }
@@ -3793,7 +3798,7 @@ function tick(now) {
       ghost.material.color.setHex(ok ? 0x7bd389 : 0xef7a6a);
       ghost.scale.setScalar(1 + Math.sin(gameT * 6) * .06);
       if (ghostB) {
-        const can = ok && G.res.wood >= (BUILD[selType] || {}).wood && G.res.stone >= ((BUILD[selType] || {}).stone || 0);
+        const can = ok && canPay(BUILD[selType] || {});
         ghostB.visible = true; ghostB.position.set(buildTarget.x, Math.sin(gameT * 3) * .03, buildTarget.z);
         ghostB.traverse(o => { if (o.isMesh && o.material && o.material.transparent && o.material.emissive) { o.material.emissive.setHex(can ? 0x3cff7a : 0xff4d3c); o.material.emissiveIntensity = .3 + .1 * Math.sin(gameT * 6); } });
       }
