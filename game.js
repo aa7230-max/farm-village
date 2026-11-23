@@ -1461,7 +1461,7 @@ function netRecv(p) {
     else { NET.waitList[p.from] = (p.n || '친구').slice(0, 10); updWaitChip(); toast('⏳ ' + (p.n || '친구') + '님이 대기 명단에 올라갔어요'); }
     return;
   }
-  if (p.ev === 'cd') { if (!NET.host && LOBBY.open && !LOBBY.cd) startCountdown(p.ms || 5000, beginCoopJoin); return; }
+  if (p.ev === 'cd') { if (LOBBY.open && !LOBBY.cd) startCountdown(p.ms || 5000, NET.host ? beginCoopRun : beginCoopJoin); return; }
   if (!G) return;
   if (p.ev === 'build') {
     if (G.b[p.k]) return;
@@ -2921,7 +2921,7 @@ app.addEventListener('pointerdown', e => {
   twoTap($('bNew'), '⚠ 한 번 더 누르면 기록이 지워져요', () => { localStorage.removeItem(RUN_KEY); startGame(false); });
   $('bCoop').onclick = () => openLobby();   // 👥 함께하기: 먼저 대기실(방)을 만들고, 방장이 시작하면 5초 뒤에 함께 시작해요
   $('bHome').onclick = goHome;
-  $('bLobbyStart').onclick = hostStart;
+  $('bLobbyStart').onclick = () => (NET.host ? hostStart() : guestStart());
   $('bReady').onclick = () => {
     NET.ready = !NET.ready; if (NET.ch) NET.ch.track(presenceMeta());
     toast(NET.ready ? '✅ 준비 완료! 방장 화면의 시작 버튼에 불이 들어와요' : '준비를 취소했어요');
@@ -3150,10 +3150,11 @@ function renderLobby() {
   const hostP = list.find(p => p.h);
   if (hostP) LOBBY.seenHost = true;
   if (!NET.host && LOBBY.seenHost && !hostP) { toast('방장이 방을 나갔어요'); goHome(); return; }
-  $('bLobbyStart').style.display = NET.host ? '' : 'none';
+  const guestsReady = list.filter(p => !p.h).length > 0 && list.filter(p => !p.h).every(p => p.r);
+  $('bLobbyStart').style.display = (NET.host || NET.ready) ? '' : 'none';
   // 친구가 준비하기를 누르면 방장의 시작 버튼에 불이 들어와요
   const readyN = list.filter(p => p.r && !p.h).length;
-  const ls = $('bLobbyStart'); ls.classList.toggle('glow', NET.host && readyN > 0);
+  const ls = $('bLobbyStart'); ls.classList.toggle('glow', NET.host ? readyN > 0 : guestsReady);
   ls.textContent = readyN > 0 ? '▶ 시작 (준비 ' + readyN + '명 · 5초 뒤)' : '▶ 시작 (5초 뒤)';
   const rb = $('bReady'); if (rb) { rb.style.display = NET.host ? 'none' : ''; rb.textContent = NET.ready ? '↩ 준비 취소' : '✅ 준비하기'; }
   const sb = $('bLobbyShare');
@@ -3176,6 +3177,15 @@ function openLobby() {
     netConnect(code);
     showLobby();
   });
+}
+// 방장이 아닌 친구도, 같이 온 친구들이 모두 준비되어 있으면 시작할 수 있어요
+function guestStart() {
+  if (!LOBBY.open || NET.host || LOBBY.cd || !NET.ch) return;
+  const st = NET.ch.presenceState(), others = [];
+  for (const k in st) for (const m of st[k]) if (!m.h) others.push(!!m.r);
+  if (!others.length || !others.every(Boolean)) { toast('모두 준비 완료되면 시작할 수 있어요'); return; }
+  netSend('cd', { ms: 5000 });
+  startCountdown(5000, beginCoopJoin);
 }
 function hostStart() {
   if (!LOBBY.open || !NET.host || LOBBY.cd || !NET.ch) return;
