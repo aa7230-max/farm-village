@@ -1317,12 +1317,17 @@ const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, s
 // 친구 화면: 방장이 계산한 적을 그대로 그려요 (적 AI·생성·피해는 방장 쪽에서만 계산해요)
 function guestMode() { return !!(NET.ch && !NET.host); }
 // 친구 쪽 공격은 mons 목록을 훑으니, 행동 중에만 친구 화면의 적(거울)을 잠깐 목록에 넣어요
-function withMirrors(fn) {
-  if (!guestMode()) return fn();
+function mirrorsIn() {
   const arr = Object.values(NET.mirrors).filter(m => m && !mons.includes(m));
   arr.forEach(m => mons.push(m));
+  return arr;
+}
+function mirrorsOut(arr) { (arr || []).forEach(m => { const i = mons.indexOf(m); if (i >= 0) mons.splice(i, 1); }); }
+function withMirrors(fn) {
+  if (!guestMode()) return fn();
+  const arr = mirrorsIn();
   try { return fn(); }
-  finally { arr.forEach(m => { const i = mons.indexOf(m); if (i >= 0) mons.splice(i, 1); }); }
+  finally { mirrorsOut(arr); }
 }
 function applyMirrors(list) {
   const seen = {};
@@ -3748,7 +3753,7 @@ function tick(now) {
   }
   if (mayor) mayor.position.y = Math.sin(gameT * 2.2) * .03;
   if (G && running && !modalOpen && !freeze) {
-    updPet(dt); updSnow(dt);
+    withMirrors(() => updPet(dt)); updSnow(dt);
     comboCd -= dt; if (comboCd <= 0) comboStrike();
   }
   villagers.forEach(v => { v.g.rotation.y = Math.sin(gameT * .8 + v.ph) * .4; });
@@ -3795,7 +3800,8 @@ function tick(now) {
     for (const k in xCd) if (xCd[k] > 0) xCd[k] -= dt;
     invul = Math.max(0, invul - dt);
     if (player) player.visible = invul <= 0 || Math.floor(invul * 14) % 2 === 0;
-    // 건물 동작
+    // 건물 동작 (친구 화면에서도 탑·덫이 화면의 적을 맞혀요)
+    const _mIn = guestMode() ? mirrorsIn() : null;
     for (const k in G.b) {
       const b = G.b[k], [bx, bz] = k.split(',').map(Number);
       if (b.t === 'TOWER') {
@@ -3825,6 +3831,7 @@ function tick(now) {
         const m = bmesh[k]; if (m && m.userData.gems) m.userData.gems.position.y = (m.userData.gemY || 2.35) + Math.sin(gameT * 2 + bx) * .05;
       }
     }
+    mirrorsOut(_mIn);
     // 보석 줍기 (자석 범위 포함)
     const magR = 1.3 + .4 * G.up.mag;
     for (let i = drops.length - 1; i >= 0; i--) {
@@ -4111,7 +4118,7 @@ function duelTrace(S, T, s, ang, pow) {
 function duelFire(shooter, ang, pow) {
   const S = shooter === 'me' ? DUEL.me : DUEL.ai, T = shooter === 'me' ? DUEL.ai : DUEL.me, s = shooter === 'me' ? 1 : -1;
   const r = duelTrace(S, T, s, ang, pow), col = shooter === 'me' ? 0x9fe6ff : 0xff8fb8;
-  DUEL.shot = { shooter, t: 0, pts: r.pts, hit: r.hit, perfect: r.perfect, blocked: r.blocked, col };
+  DUEL.shot = { shooter, t: 0, pts: r.pts, hit: r.hit, perfect: r.perfect, blocked: r.blocked, col, pow };
   DUEL.phase = 'shot'; DUEL.hold = false;
   if (DUEL.orb) DUEL.grp.remove(DUEL.orb);
   DUEL.orb = new THREE.Mesh(new THREE.SphereGeometry(.24, 12, 10), new THREE.MeshBasicMaterial({ color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -4133,10 +4140,11 @@ function duelAiShoot() {   // AI: 상대 옥상에 떨어지도록 던질 힘을
 }
 function duelAfterShot() {
   const S = DUEL.shot, victim = S.shooter === 'me' ? DUEL.ai : DUEL.me, last = S.pts[S.pts.length - 1];
+  DUEL.last = { pow: Math.round(S.pow || 0), who: S.shooter === 'me' ? '나' : 'AI' };
   duelTrail(last, S.col);
   if (S.blocked) duelMsg('🏢 기둥에 막혔어요!');
   else if (S.hit) { DUEL.hits[S.shooter]++; victim.hitT = .5; duelMsg(S.perfect ? '💥 완벽! 정확히 꽂혔어요' : (S.shooter === 'me' ? '⚡ 명중!' : '😈 상대가 명중시켰어요')); vib('hit'); }
-  else duelMsg(S.shooter === 'me' ? '빗나갔어요…' : '상대가 빗나갔어요!');
+  else { const gap = Math.abs(last.x - victim.root.position.x).toFixed(1); duelMsg((S.shooter === 'me' ? '빗나갔어요… ' : '상대가 빗나갔어요! ') + '(옥상과 ' + gap + 'm 차이)'); }
   if (DUEL.hits[S.shooter] >= DUEL_WIN_HITS) { DUEL.over = true; DUEL.win = S.shooter; DUEL.phase = 'done'; duelFinish(); return; }
   DUEL.turn = S.shooter === 'me' ? 'ai' : 'me';
   if (DUEL.turn === 'ai') { DUEL.phase = 'ai'; DUEL.aiT = DUEL_DIFF[DUEL.diff].think; } else DUEL.phase = 'aim';
@@ -4153,6 +4161,7 @@ function duelFinish() {
   } else box.append(again, out);
 }
 function duelReset() {
+  DUEL.last = null;
   DUEL.hits = { me: 0, ai: 0 }; DUEL.turn = 'me'; DUEL.phase = 'aim'; DUEL.hold = false; DUEL.pow = 0; DUEL.over = false; DUEL.win = null; DUEL.shot = null;
   if (DUEL.orb) { DUEL.grp.remove(DUEL.orb); DUEL.orb = null; }
   DUEL.me.hitT = 0; DUEL.ai.hitT = 0;
@@ -4200,6 +4209,14 @@ function duelHud() {   // 글자·게이지·포물선 미리보기는 위에 �
   c.font = '800 14px system-ui,sans-serif'; c.fillStyle = '#fff';
   c.fillText('⚔ Lv.' + DUEL.lv + ' · ' + DUEL_WIN_HITS + '번 맞히면 승리 · 난이도 ' + DUEL.diff, W / 2, 26);
   if (DUEL.rule) { c.fillStyle = '#ffd166'; c.font = '800 13px system-ui,sans-serif'; c.fillText('룰: ' + duelRuleName(), W / 2, 46); }
+  if (DUEL.rule === 'wind') {   // 바람 세기만큼 화살표가 길어져요
+    const n = Math.max(1, Math.round(Math.abs(DUEL.wind) * 6)), arrow = (DUEL.wind > 0 ? '→' : '←').repeat(n);
+    c.fillStyle = 'rgba(159,243,255,.95)'; c.font = '800 15px system-ui,sans-serif'; c.fillText('🌬 ' + arrow, W / 2, 66);
+  }
+  c.textAlign = 'left'; c.font = '800 14px system-ui,sans-serif'; c.fillStyle = DUEL.turn === 'me' ? '#ffd166' : '#c9d3e0';
+  c.fillText(DUEL.turn === 'me' ? '▶ 내 차례' : 'AI 차례', 12, 26);
+  if (DUEL.last) { c.fillStyle = 'rgba(255,255,255,.85)'; c.font = '700 12px system-ui,sans-serif'; c.fillText('마지막 발사 · 힘 ' + DUEL.last.pow + '% · ' + DUEL.last.who, 12, 46); }
+  c.textAlign = 'center';
   if (DUEL.hold && DUEL.turn === 'me') {   // 손을 떼면 이렇게 날아가요
     const r = duelTrace(DUEL.me, DUEL.ai, 1, DUEL.ang, DUEL.pow);
     c.setLineDash([6, 8]); c.strokeStyle = 'rgba(159,243,255,.9)'; c.lineWidth = 3; c.beginPath();
