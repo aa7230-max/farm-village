@@ -2739,13 +2739,15 @@ app.addEventListener('pointerdown', e => {
   const wireAttack = (id, assist) => {
     const el = $(id);
     el.addEventListener('pointerdown', e => {
-      if (e.button > 0) return; e.preventDefault(); pointerFired = true;
+      if (e.button > 0) return;
+      if (document.body.classList.contains('btn-edit')) return;   // 위치 조작 중에는 공격하지 않아요
+      e.preventDefault(); pointerFired = true;
       if (id === 'bPadAtk') { if (mode === 'FIELD' && !modalOpen && !buildMode) { aimOverride = null; fireLightningLine(); } return; }   // 왼쪽: 누르는 순간 조준선으로 곧장 (기 모으기·끌기 없음)
       chargePid = e.pointerId; chargeEl = el; chargeSX = e.clientX; chargeSY = e.clientY; chargeStart(assist);
     });
     const rel = () => { chargeRelease(assist); setTimeout(() => { pointerFired = false; }, 60); };
     el.addEventListener('pointerup', rel); el.addEventListener('pointercancel', rel);
-    el.onclick = () => { if (pointerFired) { pointerFired = false; return; } if (id === 'bPadAtk') { fireLightningLine(); return; } chargeEl = el; chargeStart(assist); chargeRelease(assist); };
+    el.onclick = () => { if (document.body.classList.contains('btn-edit')) return; if (pointerFired) { pointerFired = false; return; } if (id === 'bPadAtk') { fireLightningLine(); return; } chargeEl = el; chargeStart(assist); chargeRelease(assist); };
   };
   wireAttack('bHit', false); wireAttack('bPadAtk', true);
   // 채팅 입력 · 빠른 말풍선 · 음성 입력
@@ -2868,6 +2870,18 @@ app.addEventListener('pointerdown', e => {
   $('bContinue').onclick = () => startGame(true);
   // 홈 화면의 업데이트 확인: 설정의 업데이트 확인과 같은 기능을 바로 실행해요
   $('bHomeUpd').onclick = () => { $('bSettings').click(); setTimeout(checkUpdate, 50); };
+  // 설정 > 공격·스킬 버튼 위치 조작: 끌어서 옮기고 완료를 누르면 이 기기에 저장돼요
+  $('bBtnEdit').onclick = () => {
+    const pm = $('pauseModal'); if (pm && pm.classList.contains('show') && typeof closePause === 'function') closePause();
+    document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
+    document.body.classList.add('btn-edit'); $('btnEditBar').style.display = 'flex';
+    toast('공격·스킬 버튼을 끌어서 원하는 자리에 두세요');
+  };
+  $('bBtnEditDone').onclick = () => { document.body.classList.remove('btn-edit'); $('btnEditBar').style.display = 'none'; toast('버튼 위치를 저장했어요'); };
+  $('bBtnReset').onclick = () => {
+    ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'].forEach(id => { try { localStorage.removeItem('farm-btnpos-' + id); } catch (e) { } });
+    layoutByOrientation(); toast('버튼을 기본 위치로 되돌렸어요');
+  };
   $('bJoin').onclick = () => {
     // 초대 링크를 통째로 붙여넣어도 6자리 코드만 골라내요
     const code = (($('joinCode').value || '').match(/\d{6}/) || [])[0] || '';
@@ -3376,8 +3390,8 @@ function wireMovableBtn(el) {   // 버튼을 길게(끌어서) 옮길 수 있게
 }
 const LAND_Q = '(orientation: landscape) and (max-height: 560px)';
 const isLand = () => window.matchMedia(LAND_Q).matches;
-const MOVABLE_IDS = ['bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
-try { localStorage.removeItem('farm-btnpos-bHit'); localStorage.removeItem('farm-act-pos'); } catch (e) { }   // 오른쪽 공격 묶음은 항상 오른쪽 고정
+const MOVABLE_IDS = ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
+try { localStorage.removeItem('farm-act-pos'); } catch (e) { }   // 예전 묶음 위치 기록만 지워요 (버튼별 위치는 설정에서 조작)
 function storeBaseStyles() {   // 처음 HTML에 적힌 기본 자리를 기억해요 (세로·가로 전환 때 되돌리려고)
   MOVABLE_IDS.concat(['actions']).forEach(id => {
     const el = document.getElementById(id); if (el && el.dataset.base === undefined) el.dataset.base = el.getAttribute('style') || '';
@@ -3401,7 +3415,7 @@ function btnPlace(el, l, t) { el.style.position = 'fixed'; el.style.left = l + '
 function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   const g = document.getElementById('hitGrip'); if (g) g.remove();
   storeBaseStyles();
-  ['bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
+  ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
     el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
@@ -3410,8 +3424,8 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   window.addEventListener('pointermove', e => {
     const d = mvDrag; if (!d || e.pointerId !== d.pid || d.moved) return;
     const L = Math.hypot(e.clientX - d.sx, e.clientY - d.sy); if (L < 12) return;
-    const attack = d.id === 'bPadAtk';
-    if (attack && (aimOverride || performance.now() - d.t0 < 500)) return;   // 공격 버튼: 바로 끌면 조준, 오래 누르고 끌면 옮기기
+    const attack = d.id === 'bHit' || d.id === 'bPadAtk';
+    if (attack && !document.body.classList.contains('btn-edit') && (aimOverride || performance.now() - d.t0 < 500)) return;   // 공격 버튼: 바로 끌면 조준, 오래 누르고 끌면 옮기기
     d.moved = true; chargeOn = false; aimOverride = null;
   });
   window.addEventListener('pointermove', e => {
@@ -3717,7 +3731,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.1';
+const APP_VERSION = '2026.11.23.2';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;

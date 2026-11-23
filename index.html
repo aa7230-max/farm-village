@@ -229,6 +229,8 @@ button{font-family:inherit;cursor:pointer}
 
 @keyframes readyGlow{from{box-shadow:0 0 0 3px #ffd34d,0 0 8px #ffd34d}to{box-shadow:0 0 0 3px #fff3a0,0 0 22px #ffd34d}}
 #bLobbyStart.glow{animation:readyGlow 1s ease-in-out infinite alternate}
+
+body.btn-edit #bHit,body.btn-edit #bPadAtk,body.btn-edit #bSkill,body.btn-edit #bJump,body.btn-edit #bRun,body.btn-edit #bSnipe{outline:3px dashed #ff9f43;outline-offset:3px}
 </style>
 </head>
 <body>
@@ -337,6 +339,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="toast" class="chip hidden"></div>
 
   <!-- 조작 -->
+  <div id="btnEditBar" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:60;background:#fffdf7;border:2px solid #9fd3c7;border-radius:16px;padding:6px 10px;gap:8px;align-items:center;font-weight:800;font-size:13px;white-space:nowrap"><span>공격·스킬 버튼을 끌어서 옮기세요</span><button class="btn leaf" id="bBtnEditDone">✅ 완료</button></div>
   <div id="pad" class="hidden"><div id="knob"></div></div>
   <button id="bPadAtk" class="hidden" title="직선 번개 (A)" style="position:absolute;left:200px;bottom:208px;width:52px;height:52px;border-radius:50%;font-size:22px;z-index:5;border:3px solid #fff;background:radial-gradient(circle at 35% 28%,#fff8f2,#ffd6b8 70%);box-shadow:0 4px 0 #d98a6b;padding:0">⚡</button>
   <div id="actions" class="hidden">
@@ -369,6 +372,7 @@ button{font-family:inherit;cursor:pointer}
     <label>🔊 효과음 크기 <span id="sfxVal"></span></label>
     <input type="range" id="sfxVol" min="0" max="100" step="5" style="width:100%">
     <div class="row"><button class="btn" id="bSetSound">효과음 켬/끔</button><button class="btn" id="bSetVib">진동 켬/끔</button></div>
+    <div class="row"><button class="btn" id="bBtnEdit">🎮 공격·스킬 버튼 위치 조작</button><button class="btn" id="bBtnReset">↺ 버튼 기본 위치</button></div>
     <div class="row"><button class="btn leaf" id="bUpdate">🔄 업데이트 확인</button></div>
     <div id="updMsg" class="story" style="font-size:13px">현재 버전: <span id="verTxt"></span></div>
     <div class="row"><button class="btn primary" id="bSetClose">닫기</button></div>
@@ -444,7 +448,7 @@ button{font-family:inherit;cursor:pointer}
   <div id="load"><div class="spin"></div>🌿 마을을 준비하는 중…</div>
   <div id="err"></div>
 </div>
-<script src="game.js?v=2026.11.23.1"></script>
+<script src="game.js?v=2026.11.23.2"></script>
 <script>
 // 오프닝: 표지를 쓸어올리거나(좌우로 밀거나) 시작 버튼을 누르면 홈 화면이 나와요
 (function(){
