@@ -1172,6 +1172,7 @@ function pickTarget(x, z, kind) {
   return best;
 }
 function spawnGiant(kind) {
+  if (guestMode()) return;
   const a = rnd(0, Math.PI * 2), x = Math.sin(a) * SPAWN_R, z = Math.cos(a) * SPAWN_R;
   const m = makeMon(kind, x, z, { boss: true }); if (!m) return;
   mons.push(m); m.kingGate = true; giantRef = m; puff(x, z, 10, 0x9fe07a); glowAt(x, 1, z, 4, 0x9fe07a, .5);
@@ -1179,6 +1180,7 @@ function spawnGiant(kind) {
 }
 // 매 밤 중간에 한 마리: 크기 1.9배, 체력 3배, HP 바 표시 (처치 보상 있음, 새벽 게이트는 아님)
 function spawnMidGiant() {
+  if (guestMode()) return;
   const a = rnd(0, Math.PI * 2), x = Math.sin(a) * SPAWN_R, z = Math.cos(a) * SPAWN_R;
   const m = makeMon(pickKind(), x, z, {}); if (!m) return;
   m.giant = true; m.hp = m.hpMax = Math.round(m.hp * 12);   // 10번 이상 맞아야 쓰러져요
@@ -1189,6 +1191,7 @@ function spawnMidGiant() {
 // 난이도: 적의 공격력을 조금 올려요
 for (const k in MON) MON[k].dmg = Math.round(MON[k].dmg * 1.25 * 10) / 10;
 function spawnMon(kind, boss) {
+  if (guestMode()) return;
   const a = rnd(0, Math.PI * 2), x = Math.sin(a) * SPAWN_R, z = Math.cos(a) * SPAWN_R;
   const m = makeMon(boss ? kind : (kind || pickKind()), x, z, { boss });
   if (!m) return;
@@ -1310,7 +1313,33 @@ function playerDown() {
 const SB_URL = 'https://jozajkvlihkzdngstwgl.supabase.co';
 const SB_KEY = 'sb_publishable_Vs4P0TfjQ9qCvSYUs-tmaA_CKRVis_D';
 const ROOM_RE = /^\d{6}$/;
-const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, started: false, greeted: false, waitList: {}, wantAdmit: false, joinT: null, ready: false };
+const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, started: false, greeted: false, waitList: {}, wantAdmit: false, joinT: null, ready: false, mirrors: {}, monSeq: 0, monT: 0 };
+// 친구 화면: 방장이 계산한 적을 그대로 그려요 (적 AI·생성·피해는 방장 쪽에서만 계산해요)
+function guestMode() { return !!(NET.ch && !NET.host); }
+function applyMirrors(list) {
+  const seen = {};
+  for (const [id, x, z, hp, hpMax, kind, boss, giant] of (list || [])) {
+    seen[id] = 1;
+    let m = NET.mirrors[id];
+    if (!m) {
+      m = makeMon(kind, x, z, { boss: !!boss }); if (!m) continue;
+      if (giant) { m.obj.scale.multiplyScalar(1.9); m.shadow.scale.multiplyScalar(1.9); }
+      NET.mirrors[id] = m;
+    }
+    m.obj.position.x = x; m.obj.position.z = z; m.shadow.position.x = x; m.shadow.position.z = z;
+    m.hp = hp; m.hpMax = hpMax;
+  }
+  for (const id in NET.mirrors) if (!seen[id]) { removeMon(NET.mirrors[id]); delete NET.mirrors[id]; }
+}
+function sendMons() {
+  const list = [];
+  for (const m of mons) {
+    if (m.dead || !m.obj) continue;
+    if (!m.nid) m.nid = (NET.me || 'h') + '-' + (++NET.monSeq);
+    list.push([m.nid, +m.obj.position.x.toFixed(2), +m.obj.position.z.toFixed(2), Math.max(0, Math.round(m.hp)), m.hpMax || 1, m.kind, m.boss ? 1 : 0, m.giant ? 1 : 0]);
+  }
+  netSend('mons', { l: list });
+}
 const NET_MAX = 4; // 한 방의 최대 인원 (나 포함)
 let netPending = ((location.hash.match(/room=(\d{6})/) || [])[1]) || null;
 function netClient() {
@@ -1394,6 +1423,7 @@ function netLeave() {
   if (NET.ch) { if (sb) sb.removeChannel(NET.ch); NET.ch = null; }
   for (const id in NET.remotes) world.remove(NET.remotes[id].g);
   NET.remotes = {}; NET.code = null; NET.greeted = false; NET.host = false; NET.ready = false;
+  for (const id in NET.mirrors) removeMon(NET.mirrors[id]); NET.mirrors = {};
   closeLobby();
   updFriendChip();
 }
@@ -1491,6 +1521,7 @@ function netRecv(p) {
     return;
   }
   if (p.ev === 'cd') { if (LOBBY.open && !LOBBY.cd) startCountdown(p.ms || 5000, NET.host ? beginCoopRun : beginCoopJoin); return; }
+  if (p.ev === 'mons') { if (!NET.host && G) applyMirrors(p.l); return; }
   if (!G) return;
   if (p.ev === 'build') {
     if (G.b[p.k]) return;
@@ -1512,6 +1543,10 @@ function netRecv(p) {
 function netUpdate(dt) {
   if (!NET.started && running) { NET.started = true; netStartUp(); }
   const now = performance.now();
+  if (NET.ch && running && NET.host) {
+    NET.monT -= dt;
+    if (NET.monT <= 0) { NET.monT = .25; sendMons(); }
+  }
   if (NET.ch && running) {
     NET.sendT -= dt;
     if (NET.sendT <= 0) {
