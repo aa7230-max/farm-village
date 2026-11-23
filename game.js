@@ -2664,11 +2664,14 @@ function canBuildAt(x, z) {
   if (selType === 'MOVE') return G.carry ? (!has && G.carry !== bkey(x, z)) : (has && G.b[bkey(x, z)].t === 'LAMP');
   return selType === 'REMOVE' ? has : !has;
 }
+let ghostMats = [];   // 미리보기에서 만든 복사 재질 (다시 만들 때 버려요)
 function refreshGhostB() {
   if (ghostB) { scene.remove(ghostB); ghostB = null; }
+  ghostMats.forEach(m => { try { m.dispose(); } catch (e) { } }); ghostMats = [];
   if (selType === 'REMOVE') return;
-  ghostB = makeBuilding(selType === 'MOVE' ? 'LAMP' : selType, 0, 0);
-  ghostB.traverse(o => { if (o.isMesh) { const m = o.material.clone(); m.transparent = true; m.opacity = .5; m.depthWrite = false; o.material = m; o.castShadow = false; o.receiveShadow = false; } });
+  try { ghostB = makeBuilding(selType === 'MOVE' ? 'LAMP' : selType, 0, 0); }
+  catch (e) { ghostB = null; toast('⚠ 건물 미리보기를 만들지 못했어요'); return; }
+  ghostB.traverse(o => { if (o.isMesh) { const m = o.material.clone(); m.transparent = true; m.opacity = .5; m.depthWrite = false; o.material = m; ghostMats.push(m); o.castShadow = false; o.receiveShadow = false; } });
   ghostB.visible = false; scene.add(ghostB);
 }
 function canPay(c) { return G.res.wood >= c.wood && G.res.stone >= (c.stone || 0); }
@@ -3792,7 +3795,7 @@ function tick(now) {
       if (ghostB) {
         const can = ok && G.res.wood >= (BUILD[selType] || {}).wood && G.res.stone >= ((BUILD[selType] || {}).stone || 0);
         ghostB.visible = true; ghostB.position.set(buildTarget.x, Math.sin(gameT * 3) * .03, buildTarget.z);
-        ghostB.traverse(o => { if (o.isMesh && o.material.transparent) { o.material.emissive.setHex(can ? 0x3cff7a : 0xff4d3c); o.material.emissiveIntensity = .3 + .1 * Math.sin(gameT * 6); } });
+        ghostB.traverse(o => { if (o.isMesh && o.material && o.material.transparent && o.material.emissive) { o.material.emissive.setHex(can ? 0x3cff7a : 0xff4d3c); o.material.emissiveIntensity = .3 + .1 * Math.sin(gameT * 6); } });
       }
     } else { ghost.visible = false; if (ghostB) ghostB.visible = false; }
     // 게임 오버: 보석이 모두 사라지면
