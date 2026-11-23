@@ -141,6 +141,8 @@ button{font-family:inherit;cursor:pointer}
 #line{font-size:15px;font-weight:700;line-height:1.55;min-height:44px;margin:8px 0}
 .modal{position:absolute;inset:0;background:rgba(30,20,10,.5);display:none;align-items:center;justify-content:center;z-index:14;padding:16px;backdrop-filter:blur(2px)}
 .modal.show{display:flex}
+#setModal{overflow-y:auto;align-items:flex-start}
+#setModal .card{margin:auto}
 .card{background:var(--paper);border-radius:24px;padding:18px;max-width:380px;width:100%;border:3px solid var(--line);font-size:13px;line-height:1.5;box-shadow:0 10px 0 rgba(90,60,20,.3)}
 .card h3{margin:0 0 6px;font-size:18px}
 .opts{display:flex;flex-direction:column;gap:9px;margin-top:10px}
@@ -476,7 +478,7 @@ body.btn-edit #bHit,body.btn-edit #bPadAtk,body.btn-edit #bSkill,body.btn-edit #
   <div id="load"><div class="spin"></div>🌿 마을을 준비하는 중…</div>
   <div id="err"></div>
 </div>
-<script src="game.js?v=2026.11.23.6"></script>
+<script src="game.js?v=2026.11.23.7"></script>
 <script>
 // 오프닝: 표지를 쓸어올리거나(좌우로 밀거나) 시작 버튼을 누르면 홈 화면이 나와요
 (function(){
