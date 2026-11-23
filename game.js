@@ -18,18 +18,18 @@ const LAKE = { x: -17, z: -11, r: 4.6 }, MAYOR = { x: 3, z: -3 };
 const RUN_KEY = 'farm-v5-run', PROF_KEY = 'farm-v5-profile', SET_KEY = 'farm-v5-set';
 
 const CLS = {
-  mage:    { name: '마법사', icon: '🧙', skill: '☄ 운석 낙하', short: '☄ 운석', cd: 6, rng: 4.6, rate: .75, dmg: 1.0, skillName: 'chain' },
-  archer:  { name: '궁수',   icon: '🏹', skill: '🏹 불화살',   short: '🔥 불화살', cd: 8, rng: 5.6, rate: .85, dmg: .9,  skillName: 'rain' },
-  warrior: { name: '전사',   icon: '⚔',  skill: '🌀 꼬리치기', short: '🌀 꼬리치기', cd: 7, rng: 2.4, rate: .6,  dmg: 1.25, skillName: 'spin' }
+  mage:    { name: '마법사', icon: '🧙', skill: '☄ 운석 낙하', short: '☄ 운석', cd: 9, rng: 4.6, rate: .75, dmg: 1.0, skillName: 'chain' },
+  archer:  { name: '궁수',   icon: '🏹', skill: '🏹 불화살',   short: '🔥 불화살', cd: 12, rng: 5.6, rate: .85, dmg: .9,  skillName: 'rain' },
+  warrior: { name: '전사',   icon: '⚔',  skill: '🌀 꼬리치기', short: '🌀 꼬리치기', cd: 10.5, rng: 2.4, rate: .6,  dmg: 1.25, skillName: 'spin' }
 };
 const BUILD = {
-  HOUSE: { wood: 5, stone: 3, name: '집', hp: 30 },
-  TOWER: { wood: 6, stone: 5, name: '망루', hp: 40 },
-  APT:   { wood: 8, stone: 6, name: '아파트', hp: 60 },
-  MINE:  { wood: 4, stone: 4, name: '광산', hp: 24 },
-  WALL:  { wood: 1, stone: 2, name: '성벽', hp: 45 },
-  LAMP:  { wood: 1, stone: 1, name: '전등', hp: 10 },
-  TRAP:  { wood: 2, stone: 2, name: '가시 덫', hp: 10 }
+  HOUSE: { wood: 8, stone: 5, name: '집', hp: 30 },
+  TOWER: { wood: 10, stone: 8, name: '망루', hp: 40 },
+  APT:   { wood: 13, stone: 10, name: '아파트', hp: 60 },
+  MINE:  { wood: 7, stone: 7, name: '광산', hp: 24 },
+  WALL:  { wood: 2, stone: 3, name: '성벽', hp: 45 },
+  LAMP:  { wood: 2, stone: 2, name: '전등', hp: 10 },
+  TRAP:  { wood: 3, stone: 3, name: '가시 덫', hp: 10 }
 };
 const MODEL3D = {};   // 3D 동물 모델 (펫·적)
 const MON = {
@@ -136,11 +136,14 @@ function ensureCore() {
   scene.add(coreObj);
 }
 let crackGroup = null, lastCoreFx = 0, coreSpk = null, coreRing2 = null, coreRing3 = null;
+let coreToastT = 0;
 function coreHitFx() {   // 보석이 맞으면 번쩍, 흔들림, 금 가기, 불꽃
   if (!coreGem || performance.now() - lastCoreFx < 280) return; lastCoreFx = performance.now();
-  tweenTo(1.22, 1, .28, v => coreGem.scale.setScalar(v), 'back');
+  tweenTo(1.5, 1, .38, v => coreGem.scale.setScalar(v), 'back');
+  puff(0, 0, 18, 0xff8fe6); shake = Math.max(shake, .5);
+  if (performance.now() - (coreToastT || 0) > 1500) { coreToastT = performance.now(); toast('💥 보석이 금이 갔어요! 지켜 주세요'); }
   if (!crackGroup) { crackGroup = new THREE.Group(); coreGem.add(crackGroup); }
-  const cr = new THREE.Mesh(new THREE.BoxGeometry(.04, .55, .04), new THREE.MeshBasicMaterial({ color: 0x2a0a1a }));
+  const cr = new THREE.Mesh(new THREE.BoxGeometry(.08, .85, .08), new THREE.MeshBasicMaterial({ color: 0x2a0a1a }));
   cr.position.set(rnd(-.45, .45), rnd(-.45, .45), rnd(-.45, .45)); cr.rotation.set(rnd(0, 3), rnd(0, 3), rnd(0, 3));
   crackGroup.add(cr); if (crackGroup.children.length > 14) crackGroup.remove(crackGroup.children[0]);
   const gx = 0, gy = coreGem.position.y, gz = 0;
@@ -1097,7 +1100,7 @@ function makeMon(kind, x, z, opts) {
   const hpMax = opts && opts.boss ? Math.round(d.hp * diffMul() * (1 + (G.day - 5) * .18)) : 1;
   const m = {
     kind, boss: !!(opts && opts.boss), d, obj, shadow, padY, A, cur: null, loop: false, at: 0, done: false, face: 1,
-    hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
+    hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z, kind), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
     fly: d.fly || 0, ph: rnd(0, 6), kx: 0, kz: 0, flash: 0, touchCd: 0, ringCd: 2.4, texs: [A.move, A.atk, A.hit, A.death]
   };
   setAnim(m, 'move', true);
@@ -1116,7 +1119,7 @@ function makeMon3D(kind, x, z, d, opts) {
   const clips = { walk: find(d.walk), atk: find(d.atk), hit: find(d.hit), death: find(d.death) };
   const hpMax = boss ? Math.round(d.hp * diffMul() * (1 + (G.day - 5) * .18)) : 1;
   const m = { kind, boss, d, obj, shadow, padY: 0, A: null, mx: new THREE.AnimationMixer(root), clips, clipNow: null, cur: null, loop: false, at: 0, done: false, face: 1,
-    hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
+    hp: hpMax, hpMax, state: 'walk', tk: pickTarget(x, z, kind), carry: 0, cd: rnd(.4, 1.2), hitLock: 0, dead: false,
     fly: d.fly || 0, ph: rnd(0, 6), kx: 0, kz: 0, flash: 0, touchCd: 0, ringCd: 2.4, texs: [] };
   setAnim(m, 'move', true);
   return m;
@@ -1157,12 +1160,12 @@ function removeMon(m) {
   if (m.boss && bossRef === m) { bossRef = null; $('bossBar').style.display = 'none'; }
   if (giantRef === m) giantRef = null;
 }
-function pickTarget(x, z) {
+function pickTarget(x, z, kind) {
   let best = null, bd = Infinity;
   for (const k in G.b) {
     if (G.b[k].t !== 'HOUSE') continue;
     const [bx, bz] = k.split(',').map(Number);
-    const d = Math.hypot(bx - x, bz - z) - ((G.b[k].g || 0) > 0 ? 6 : 0);
+    const d = Math.hypot(bx - x, bz - z) - ((G.b[k].g || 0) > 0 ? (kind === 'dragon' ? 30 : 6) : 0);
     if (d < bd) { bd = d; best = k; }
   }
   return best;
@@ -1182,6 +1185,8 @@ function spawnMidGiant() {
   mons.push(m); if (!giantRef || giantRef.dead) giantRef = m;
   puff(x, z, 8, 0xffd0a0); toast('🧟 거대한 좀비가 나타났어요! 처치해 주세요.'); vib('boss');
 }
+// 난이도: 적의 공격력을 조금 올려요
+for (const k in MON) MON[k].dmg = Math.round(MON[k].dmg * 1.25 * 10) / 10;
 function spawnMon(kind, boss) {
   const a = rnd(0, Math.PI * 2), x = Math.sin(a) * SPAWN_R, z = Math.cos(a) * SPAWN_R;
   const m = makeMon(boss ? kind : (kind || pickKind()), x, z, { boss });
@@ -1811,7 +1816,14 @@ function ensureGauge() {
   gaugeEl.innerHTML = '<div class="lbl">🔋 기 모으는 중</div><div class="bar"><div class="fill"></div></div>';
   document.body.appendChild(gaugeEl); return gaugeEl;
 }
+// 오른쪽 공격: 누르고 있으면 가장 가까운 몬스터에게 자동 조준 (직접 끌어서 조준하면 그쪽을 따라요)
+function autoAimUpdate() {
+  if (!chargeOn || !chargeEl || chargeEl.id !== 'bHit' || chargeMoved) return;
+  const t = nearestMon(CLS[G.cls].rng * 2.6 + 4);
+  aimOverride = t ? { x: t.obj.position.x, z: t.obj.position.z } : null;
+}
 function updateChargeRing() {   // 꾹 누르는 동안: 게이지 + 조준선 + 범위 원
+  autoAimUpdate();
   if (!chargeRing) { chargeRing = new THREE.Mesh(new THREE.RingGeometry(.6, .72, 48), new THREE.MeshBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: .6, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })); chargeRing.rotation.x = -Math.PI / 2; scene.add(chargeRing); }
   if (!aimLineObj) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)); aimLineObj = new THREE.Line(g, new THREE.LineDashedMaterial({ color: 0xfff3a0, dashSize: .3, gapSize: .2, transparent: true, opacity: .85, depthWrite: false })); aimLineObj.frustumCulled = false; scene.add(aimLineObj); }
   const gauge = ensureGauge();
@@ -1923,6 +1935,7 @@ function chargedZap(lv) {
     const R = chargeRadius(lv);
     glowAt(focus.x, .4, focus.z, R * 1.6, 0x9fe6ff, .35);
     shockwave(focus.x, focus.z, R * 2.2);
+    for (const m of mons) { if (!m.dead && Math.hypot(m.obj.position.x - focus.x, m.obj.position.z - focus.z) < R * 1.8 + .6) m.slow = Math.max(m.slow || 0, 1.2 + lv * 1.8); }   // 강하게 모을수록 적이 더 오래 느려져요
     scorchAt(focus.x, focus.z, R * .5);
     mons.slice().forEach(m => {
       if (m.dead) return;
@@ -2476,7 +2489,7 @@ const DAY_HEMI = new THREE.Color(0xdff3ff), NIGHT_HEMI = new THREE.Color(0x3b4d7
 const DAY_FOG = new THREE.Color(0xcde9f2), NIGHT_FOG = new THREE.Color(0x1b2a4d);
 function startNight() {
   const isBoss = G.day % 5 === 0;
-  const cnt = Math.min(40, 6 + G.day * 3);
+  const cnt = Math.min(60, 9 + G.day * 4);
   spawnQ = cnt; spawnT = .2;
   const wr = Math.random(); weather = wr < .35 ? 'rain' : wr < .55 ? 'fog' : 'clear'; bossSpawned = false; midGiantDone = false;
   toast(`🌙 ${G.day}일차 밤! 적 ${cnt}마리가 와요.${isBoss ? '\n⚠ 보스 등장!' : ''}`);
@@ -2584,6 +2597,7 @@ function placeAt(x, z) {
   const k = bkey(x, z);
   if (Math.hypot(x - MAYOR.x, z - MAYOR.z) < 1.5 || Math.hypot(x - px, z - pz) < 1.1) { toast('이 자리에는 지을 수 없어요.'); return; }
   if (selType !== 'REMOVE' && (Math.hypot(x, z) < 4.3 || (selType === 'APT' && Math.hypot(x + 3.5, z) < 4.6))) { toast('보석 근처에는 지을 수 없어요.'); return; }
+  if (selType === 'MINE' && Object.values(G.b).filter(b => b.t === 'MINE').length >= 3) { toast('광산은 최대 3개까지 지을 수 있어요.'); return; }
   if (selType === 'MOVE') {   // 🚚 전등 옮기기: 전등을 집고, 원하는 빈 땅에 내려놓아요
     if (!G.carry) {
       if (!G.b[k] || G.b[k].t !== 'LAMP') { toast('옮길 전등을 눌러 주세요.'); return; }
@@ -3006,7 +3020,7 @@ function updateCam(dt, moving) {
       xh.style.opacity = !xhOn && !sniper && !scopeOn() ? 0 : (sniper || scopeOn()) ? 1 : (play ? .8 : 0);
       xh.classList.toggle('lock', !!(play && G && CLS[G.cls] && aimTarget(CLS[G.cls].rng + 14)));
     } }
-  const el = sniper ? .32 : clamp(.55 - camPitch * .6, .12, 1.25), dist = sniper ? 6.5 : 15.5;   // 기본 카메라를 조금 멀리 뒀어요
+  const el = sniper ? .32 : clamp(.55 - camPitch * .6, .3, 1.25), dist = sniper ? 6.5 : 19;   // 기본 카메라를 조금 멀리 뒀어요
   tpP.set(px + Math.sin(camYaw) * Math.cos(el) * dist, py + 1.2 + Math.sin(el) * dist, pz + Math.cos(camYaw) * Math.cos(el) * dist);
   { const lk = (sniper ? 3 : 0) + 6 * scopeBlend, lh = lk * Math.cos(camPitch), lv = lk * Math.sin(camPitch) + (sniper ? 0 : Math.max(0, camPitch - .3) * 9); tpL.set(px - Math.sin(camYaw) * lh, py + 1 - .2 * scopeBlend + lv, pz - Math.cos(camYaw) * lh); }
   const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
@@ -3636,7 +3650,7 @@ function tick(now) {
         }
       } else if (b.t === 'MINE') {
         b.tm = (b.tm || 0) + dt;
-        if (b.tm >= 6 / (1 + .4 * ((b.lv || 1) - 1))) { b.tm = 0; G.res.gems += (b.lv || 1) + relicCount('charm'); puff(bx, bz, 5, 0xa6e6ff); toast('💎 광산에서 보석을 캤어요!'); persistRun(); }
+        if (b.tm >= 11 / (1 + .4 * ((b.lv || 1) - 1))) { b.tm = 0; G.res.gems += (b.lv || 1) + relicCount('charm'); puff(bx, bz, 5, 0xa6e6ff); toast('💎 광산에서 보석을 캤어요!'); persistRun(); }
         const m = bmesh[k]; if (m && m.userData.crys) m.userData.crys.rotation.y += dt * .8;
       } else if (b.t === 'HOUSE') {
         b.dep = (b.dep || 0) + dt;
@@ -3752,11 +3766,11 @@ function applyUpdate(ver) {
 }
 /* ================= 상점 · 추천 ================= */
 const SHOP = [
-  { name: '🪵 나무 10개', cost: 2, buy: () => { G.res.wood += 10; } },
-  { name: '🪨 돌 10개', cost: 2, buy: () => { G.res.stone += 10; } },
-  { name: '🌿 섬유 10개', cost: 2, buy: () => { G.res.fiber = (G.res.fiber || 0) + 10; } },
-  { name: '💠 보석나무 회복 +40', cost: 4, buy: () => { G.coreHp = Math.min(200, (G.coreHp == null ? 200 : G.coreHp) + 40); } },
-  { name: '❤ 내 체력 회복 +40', cost: 3, buy: () => { G.hp = Math.min(G.maxHp, G.hp + 40); } }
+  { name: '🪵 나무 10개', cost: 4, buy: () => { G.res.wood += 10; } },
+  { name: '🪨 돌 10개', cost: 4, buy: () => { G.res.stone += 10; } },
+  { name: '🌿 섬유 10개', cost: 4, buy: () => { G.res.fiber = (G.res.fiber || 0) + 10; } },
+  { name: '💠 보석나무 회복 +40', cost: 8, buy: () => { G.coreHp = Math.min(200, (G.coreHp == null ? 200 : G.coreHp) + 40); } },
+  { name: '❤ 내 체력 회복 +40', cost: 6, buy: () => { G.hp = Math.min(G.maxHp, G.hp + 40); } }
 ];
 function renderShop() {
   const box = document.getElementById('shopList'); if (!box || !G) return;
