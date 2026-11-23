@@ -3394,6 +3394,7 @@ function frame(now) {
   fpsUpdate(now);
   coreAnim(now / 1000);
   requestAnimationFrame(frame);
+  if (DUEL.open) return;   // 아파트 대결 중에는 대결 화면만 그려요
   try { tick(now); } catch (e) { frameErrors++; if (frameErrors < 5) showErr('FRAME: ' + (e.stack || e.message)); }
   if (doomAnim) { const dd = doomLast ? Math.max(.008, Math.min(.05, (now - doomLast) / 1000)) : .016; doomLast = now; try { doomUpdate(dd); } catch (e) { showErr('DOOM: ' + (e.stack || e.message)); doomAnim = null; } }
   else doomLast = 0;
@@ -3903,74 +3904,128 @@ function silentUpdateCheck() {
 setupSettings();
 setupShop();
 
-/* ================= 아파트 대결: 힘 게이지로 상대 아파트에 번개 맞히기 (AI 상대) ================= */
+/* ================= 아파트 대결 (3D): 모험 필드에 아파트 두 채, 옥상에서 번개를 포물선으로 던져요 ================= */
 const DUEL_DIFF = { '쉬움': { err: .2, perr: .18, think: 2.4 }, '보통': { err: .11, perr: .1, think: 1.7 }, '어려움': { err: .05, perr: .05, think: 1.1 } };
-const DUEL_WIN_HITS = 5, DUEL_MAX_LV = 5, DUEL_CYCLE = 1.5;
-const DUEL = { open: false, lv: 1, rule: null, wind: 0, moving: false, mt: 0, diff: '보통', cv: null, g: null, W: 0, H: 0, geo: null, stars: [], turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .6, shot: null, shooter: null, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0, wrap: null };
-function duelGeo() {
-  const W = DUEL.W, H = DUEL.H, gy = H * .8, ah = H * .24, aw = Math.min(W * .1, 96), top = gy - ah;
-  const sep = .6 + .05 * (DUEL.lv - 1);   // 레벨이 오를수록 두 아파트 사이 간격이 넓어져요 (.6 → .8)
-  return { me: { x: W * (.5 - sep / 2), top, gy, aw, ah }, ai: { x: W * (.5 + sep / 2), top, gy, aw, ah, base: top }, maxR: W * .9 };
-}
-// 발사 경로: 각도(ang)와 힘(pow, 0~100)으로 끝점을 계산해요. 'me'는 오른쪽, 'ai'는 왼쪽으로 쏩니다
-function duelPath(shooter, ang, pow) {
-  const g = DUEL.geo, a = shooter === 'me' ? g.me : g.ai, s = shooter === 'me' ? 1 : -1, R = pow / 100 * g.maxR;
-  return { ox: a.x, oy: a.top, ex: a.x + s * Math.cos(ang) * R, ey: a.top - Math.sin(ang) * R };
-}
-function duelJudge(shooter, ex, ey) {
-  const t = shooter === 'me' ? DUEL.geo.ai : DUEL.geo.me, m = 22;
-  const hit = Math.abs(ex - t.x) <= t.aw / 2 + m && ey >= t.top - m && ey <= t.gy + m;
-  const perfect = hit && Math.hypot(ex - t.x, ey - (t.top + t.ah / 2)) < 26;
-  return { hit, perfect };
-}
+const DUEL_WIN_HITS = 5, DUEL_MAX_LV = 5, DUEL_CYCLE = 1.5, DUEL_GRAV = 18, DUEL_DT = .02;
+const DUEL = { open: false, lv: 1, rule: null, wind: 0, moving: false, mt: 0, diff: '보통', wrap: null, cv2: null, g2: null, W: 0, H: 0, grp: null, hidden: [], loginEl: null, me: null, ai: null, top: 0, pillar: null, orb: null, trails: [], shot: null, turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .9, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0 };
+function duelSep() { return 7 + .8 * (DUEL.lv - 1); }   // 레벨이 오를수록 두 아파트 사이가 멀어져요
+function duelHead(S) { return new THREE.Vector3(S.root.position.x, S.root.position.y + DUEL.top + 1.25, 0); }
+function duelProj(v) { const p = v.clone().project(camera); return { x: (p.x + 1) / 2 * DUEL.W, y: (1 - p.y) / 2 * DUEL.H }; }
+function duelWindA() { return DUEL.rule === 'wind' ? DUEL.wind * 2.2 : 0; }   // 바람은 옆으로 미는 힘이에요
+function duelRuleName() { return DUEL.rule === 'wind' ? '바람 ' + (DUEL.wind > 0 ? '→' : '←') : DUEL.rule === 'moving' ? '상대 아파트가 위아래로 움직여요' : DUEL.rule === 'obstacle' ? '가운데 기둥이 있어요' : ''; }
 function duelMsg(t) { DUEL.msg = t; DUEL.msgT = 1.8; }
-// ===== 4레벨부터 룰이 하나씩 랜덤으로 붙어요: 바람 / 움직이는 아파트 / 가운데 건물 =====
-function duelObs() { const W = DUEL.W, H = DUEL.H, gy = H * .8; return { x: W * .47, w: W * .06, top: gy - H * .3, bottom: gy }; }
-function duelWindPx() { return DUEL.rule === 'wind' ? DUEL.wind * DUEL.W * .05 : 0; }
-function duelRuleName() { return DUEL.rule === 'wind' ? '바람 ' + (DUEL.wind > 0 ? '→' : '←') : DUEL.rule === 'moving' ? '상대 아파트가 위아래로 움직여요' : DUEL.rule === 'obstacle' ? '가운데 건물이 있어요' : ''; }
-function duelPickRule() {
-  DUEL.rule = null; DUEL.wind = 0; DUEL.moving = false;
-  if (DUEL.lv < 4) return;
-  DUEL.rule = ['wind', 'moving', 'obstacle'][Math.floor(Math.random() * 3)];
-  if (DUEL.rule === 'wind') DUEL.wind = (Math.random() < .5 ? -1 : 1) * (.5 + Math.random() * .5);
-  if (DUEL.rule === 'moving') DUEL.moving = true;
+
+// 아파트 한 채: 기존 마을 집 모델을 키워서 써요
+function duelApartment() {
+  const src = VILLAGE.house_b || VILLAGE.house_a, g = new THREE.Group();
+  if (src) g.add(src.clone());
+  else { const m = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.6, 2.2), new THREE.MeshLambertMaterial({ color: 0xf2e6d0 })); m.position.y = 1.3; g.add(m); }
+  g.scale.set(.9, 2, .9);
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+// 기존 캐릭터(직업 옷 포함)를 옥상에 세워요
+function duelChar(cls, tint) {
+  const m = new THREE.Group();
+  const body = (creatureProto && THREE.SkeletonUtils) ? THREE.SkeletonUtils.clone(creatureProto) : fallbackChar();
+  m.add(body); m.add(gear(cls));
+  if (cls === 'archer' && antlersProto) { const an = antlersProto.clone(); an.position.set(0, 1.3, 0); m.add(an); }
+  if (tint) tintObj(m, tint);
+  m.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return m;
+}
+// 모험 필드는 그대로 두고, 대결에 필요 없는 것만 숨겨요 (하늘·땅·조명은 유지)
+function duelEnterScene() {
+  DUEL.hidden = [];
+  for (const o of scene.children) {
+    if (o.isLight || o.isCamera) continue;
+    const gp = o.geometry && o.geometry.parameters;
+    if (gp && (gp.radius === 150 || gp.width === 260)) continue;
+    if (o.visible) { DUEL.hidden.push(o); o.visible = false; }
+  }
+}
+function duelBuild() {
+  const grp = new THREE.Group(); scene.add(grp); DUEL.grp = grp;
+  const probe = duelApartment(); probe.updateMatrixWorld(true);
+  DUEL.top = new THREE.Box3().setFromObject(probe).max.y;   // 아파트 옥상 높이
+  const mk = (cls, tint) => {
+    const r = new THREE.Group(); r.add(duelApartment());
+    const c = duelChar(cls, tint); c.position.y = DUEL.top; r.add(c); grp.add(r);
+    return { root: r, char: c, hitT: 0 };
+  };
+  DUEL.me = mk(profile.cls || 'mage', null);
+  DUEL.ai = mk(['mage', 'archer', 'warrior'][Math.floor(Math.random() * 3)], 0xff9ac0);
+  DUEL.pillar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 7, 1.2), new THREE.MeshLambertMaterial({ color: 0x5a4a6a }));
+  DUEL.pillar.position.set(0, 3.5, 0); DUEL.pillar.visible = false; grp.add(DUEL.pillar);
+}
+function duelFitCam() {   // 두 아파트가 화면에 다 들어오도록 카메라 거리를 맞춰요
+  const sep = duelSep(), fov = camera.fov * Math.PI / 180, aspect = innerWidth / innerHeight;
+  const half = sep / 2 + 3.2, d = Math.max(10, half / (Math.tan(fov / 2) * aspect));
+  camera.aspect = aspect; camera.position.set(0, 5.2, d); camera.lookAt(0, 3.4, 0); camera.updateProjectionMatrix();
+}
+function duelLayout() {
+  const sep = duelSep();
+  DUEL.me.root.position.set(-sep / 2, 0, 0); DUEL.ai.root.position.set(sep / 2, 0, 0);
+  DUEL.pillar.visible = DUEL.rule === 'obstacle';
+  duelFitCam();
+}
+
+// 포물선 궤적을 미리 계산해요 (미리보기와 실제 발사가 같은 식을 써요)
+function duelTrace(S, T, s, ang, pow) {
+  const o = duelHead(S); o.x += s * .5; o.y += .2;
+  const sp = 6 + pow / 100 * 12, vx = Math.cos(ang) * sp * s, vy = Math.sin(ang) * sp, wa = duelWindA();
+  const tTop = T.root.position.y + DUEL.top, fx0 = T.root.position.x - 1.4, fx1 = T.root.position.x + 1.4;
+  const pts = [o.clone()], res = { hit: false, perfect: false, blocked: false, pts };
+  for (let i = 1; i < 600; i++) {
+    const t = i * DUEL_DT, nx = o.x + vx * t + .5 * wa * t * t, ny = o.y + vy * t - .5 * DUEL_GRAV * t * t;
+    const pv = new THREE.Vector3(nx, ny, 0); pts.push(pv);
+    if (DUEL.rule === 'obstacle' && Math.abs(nx) <= .6 && ny >= 0 && ny <= 7) { res.blocked = true; break; }
+    if (fx0 <= nx && nx <= fx1 && ny <= tTop + .25) {   // 상대 옥상 위로 떨어졌어요
+      if (ny >= tTop - .6) { res.hit = true; res.perfect = Math.hypot(nx - T.root.position.x, ny - (tTop + 1.25)) < 1.0; }
+      break;
+    }
+    if (ny < 0) break;
+  }
+  return res;
 }
 function duelFire(shooter, ang, pow) {
-  const p = duelPath(shooter, ang, pow);
-  p.ex += duelWindPx();   // 바람이 번개를 옆으로 밀어요
-  let blocked = false;
-  const ob = DUEL.rule === 'obstacle' ? duelObs() : null;
-  if (ob) {   // 건물에 부딪히면 거기서 멈춰요
-    for (let i = 1; i <= 60; i++) {
-      const f = i / 60, x = p.ox + (p.ex - p.ox) * f, y = p.oy + (p.ey - p.oy) * f;
-      if (x >= ob.x && x <= ob.x + ob.w && y >= ob.top) { p.ex = x; p.ey = y; blocked = true; break; }
-    }
-  }
-  const j = blocked ? { hit: false, perfect: false, blocked: true } : duelJudge(shooter, p.ex, p.ey);
-  DUEL.shot = Object.assign(p, j, { shooter, t: 0 }); DUEL.shooter = shooter; DUEL.phase = 'shot'; DUEL.hold = false;
-  sfx('skill'); hitFx(.12);
+  const S = shooter === 'me' ? DUEL.me : DUEL.ai, T = shooter === 'me' ? DUEL.ai : DUEL.me, s = shooter === 'me' ? 1 : -1;
+  const r = duelTrace(S, T, s, ang, pow), col = shooter === 'me' ? 0x9fe6ff : 0xff8fb8;
+  DUEL.shot = { shooter, t: 0, pts: r.pts, hit: r.hit, perfect: r.perfect, blocked: r.blocked, col };
+  DUEL.phase = 'shot'; DUEL.hold = false;
+  if (DUEL.orb) DUEL.grp.remove(DUEL.orb);
+  DUEL.orb = new THREE.Mesh(new THREE.SphereGeometry(.24, 12, 10), new THREE.MeshBasicMaterial({ color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  DUEL.orb.position.copy(r.pts[0]); DUEL.grp.add(DUEL.orb);
+  sfx('skill');
 }
-function duelAiShoot() {
-  const cfg = DUEL_DIFF[DUEL.diff], g = DUEL.geo, o = g.ai, tx = g.me.x - duelWindPx(), ty = g.me.top + g.me.ah / 2;
-  const vx = tx - o.x, vy = ty - o.top, dist = Math.hypot(vx, vy);
-  const a = Math.atan2(-vy, Math.abs(vx)) + (Math.random() * 2 - 1) * cfg.err;
-  const pw = dist / g.maxR * 100 * (1 + (Math.random() * 2 - 1) * cfg.perr);
-  duelFire('ai', clamp(a, -1.45, 1.45), clamp(pw, 0, 100));
+function duelTrail(p, col) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(.1, 8, 6), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  m.position.copy(p); DUEL.grp.add(m); DUEL.trails.push({ m, life: .4 });
+}
+function duelAiShoot() {   // AI: 상대 옥상에 떨어지도록 던질 힘을 계산해요
+  const cfg = DUEL_DIFF[DUEL.diff], S = DUEL.ai, T = DUEL.me;
+  const o = duelHead(S); o.x -= .5; o.y += .2;
+  const tTop = T.root.position.y + DUEL.top, dx = Math.abs(T.root.position.x - o.x), dy = tTop + .3 - o.y;
+  const th = .85 + (Math.random() * 2 - 1) * cfg.err, c = Math.cos(th), den = dx * Math.tan(th) - dy;
+  let v = den > 0 ? Math.sqrt(DUEL_GRAV * dx * dx / (2 * c * c * den)) : 14;
+  v *= 1 + (Math.random() * 2 - 1) * cfg.perr;
+  duelFire('ai', th, clamp((v - 6) / 12 * 100, 0, 100));
 }
 function duelAfterShot() {
-  const s = DUEL.shot;
-  if (s.blocked) duelMsg('🏢 건물에 막혔어요!');
-  else if (s.hit) { DUEL.hits[s.shooter]++; duelMsg(s.perfect ? '💥 완벽! 정확히 꽂혔어요' : (s.shooter === 'me' ? '⚡ 명중!' : '😈 상대가 명중시켰어요')); vib('hit'); }
-  else duelMsg(s.shooter === 'me' ? '빗나갔어요…' : '상대가 빗나갔어요!');
-  if (DUEL.hits[s.shooter] >= DUEL_WIN_HITS) { DUEL.over = true; DUEL.win = s.shooter; DUEL.phase = 'done'; duelFinish(); return; }
-  DUEL.turn = s.shooter === 'me' ? 'ai' : 'me';
+  const S = DUEL.shot, victim = S.shooter === 'me' ? DUEL.ai : DUEL.me, last = S.pts[S.pts.length - 1];
+  duelTrail(last, S.col);
+  if (S.blocked) duelMsg('🏢 기둥에 막혔어요!');
+  else if (S.hit) { DUEL.hits[S.shooter]++; victim.hitT = .5; duelMsg(S.perfect ? '💥 완벽! 정확히 꽂혔어요' : (S.shooter === 'me' ? '⚡ 명중!' : '😈 상대가 명중시켰어요')); vib('hit'); }
+  else duelMsg(S.shooter === 'me' ? '빗나갔어요…' : '상대가 빗나갔어요!');
+  if (DUEL.hits[S.shooter] >= DUEL_WIN_HITS) { DUEL.over = true; DUEL.win = S.shooter; DUEL.phase = 'done'; duelFinish(); return; }
+  DUEL.turn = S.shooter === 'me' ? 'ai' : 'me';
   if (DUEL.turn === 'ai') { DUEL.phase = 'ai'; DUEL.aiT = DUEL_DIFF[DUEL.diff].think; } else DUEL.phase = 'aim';
 }
 function duelFinish() {
   profile.duelPlay = (profile.duelPlay || 0) + 1; if (DUEL.win === 'me') profile.duelWin = (profile.duelWin || 0) + 1; saveProfile();
   const box = DUEL.wrap.querySelector('#duelEnd'); box.style.display = 'block';
   box.innerHTML = (DUEL.win === 'me' ? (DUEL.lv >= DUEL_MAX_LV ? '👑 전 레벨 클리어!' : '🏆 Lv.' + DUEL.lv + ' 승리!') : '😈 아쉽게 졌어요') + '<div style="font-size:13px;font-weight:700;margin:6px 0 10px">전적 ' + (profile.duelWin || 0) + '승 / ' + profile.duelPlay + '판</div>';
-  const again = document.createElement('button'); again.className = 'btn primary'; again.textContent = '다시 도전'; again.onclick = duelReset;
+  const again = document.createElement('button'); again.className = 'btn'; again.textContent = '다시 도전'; again.onclick = duelReset;
   const out = document.createElement('button'); out.className = 'btn'; out.textContent = '나가기'; out.style.marginLeft = '6px'; out.onclick = closeDuel;
   if (DUEL.win === 'me' && DUEL.lv < DUEL_MAX_LV) {
     const next = document.createElement('button'); next.className = 'btn primary'; next.textContent = '다음 레벨 (Lv.' + (DUEL.lv + 1) + ')'; next.onclick = duelNext;
@@ -3979,80 +4034,78 @@ function duelFinish() {
 }
 function duelReset() {
   DUEL.hits = { me: 0, ai: 0 }; DUEL.turn = 'me'; DUEL.phase = 'aim'; DUEL.hold = false; DUEL.pow = 0; DUEL.over = false; DUEL.win = null; DUEL.shot = null;
+  if (DUEL.orb) { DUEL.grp.remove(DUEL.orb); DUEL.orb = null; }
+  DUEL.me.hitT = 0; DUEL.ai.hitT = 0;
   if (DUEL.wrap) { const box = DUEL.wrap.querySelector('#duelEnd'); if (box) { box.style.display = 'none'; box.innerHTML = ''; } }
-  duelMsg('당신이 먼저 쏴요! 화면을 누른 채 방향을 정하고, 힘이 맞을 때 손을 떼세요');
+  duelMsg('화면을 누른 채 방향을 정하고, 힘이 맞을 때 손을 떼세요. 포물선으로 던져요!');
+}
+function duelPickRule() {   // 4레벨부터 룰이 하나씩 랜덤으로 붙어요: 바람 / 움직이는 아파트 / 가운데 기둥
+  DUEL.rule = null; DUEL.wind = 0; DUEL.moving = false; DUEL.mt = 0;
+  if (DUEL.lv < 4) return;
+  DUEL.rule = ['wind', 'moving', 'obstacle'][Math.floor(Math.random() * 3)];
+  if (DUEL.rule === 'wind') DUEL.wind = (Math.random() < .5 ? -1 : 1) * (.5 + Math.random() * .5);
+  if (DUEL.rule === 'moving') DUEL.moving = true;
+}
+function duelNext() {
+  DUEL.lv = Math.min(DUEL_MAX_LV, DUEL.lv + 1);
+  duelPickRule(); duelLayout(); duelTopBar(); duelReset();
+  duelMsg('Lv.' + DUEL.lv + ' 시작!' + (DUEL.rule ? ' 새 룰: ' + duelRuleName() : ' 거리가 더 멀어졌어요'));
 }
 function duelUpdate(dt) {
   if (DUEL.msgT > 0) DUEL.msgT -= dt;
-  if (DUEL.moving && DUEL.geo) { DUEL.mt += dt; const g = DUEL.geo.ai; g.top = g.base - (1 - Math.cos(DUEL.mt * 1.4)) / 2 * DUEL.H * .08; }
-  if (DUEL.hold) { DUEL.holdT += dt; const t = (DUEL.holdT % DUEL_CYCLE) / DUEL_CYCLE; DUEL.pow = (t < .5 ? t * 2 : 2 - t * 2) * 100; }
-  if (DUEL.phase === 'shot') { DUEL.shot.t += dt; if (DUEL.shot.t >= .5) duelAfterShot(); }
-  else if (DUEL.phase === 'ai') { DUEL.aiT -= dt; if (DUEL.aiT <= 0) duelAiShoot(); }
-}
-function duelApt(c, a, col, label, hp, isMe) {
-  const x = a.x - a.aw / 2, y = a.top;
-  c.fillStyle = col; c.strokeStyle = '#3a2a18'; c.lineWidth = 3;
-  c.beginPath(); if (c.roundRect) c.roundRect(x, y, a.aw, a.ah, 10); else c.rect(x, y, a.aw, a.ah); c.fill(); c.stroke();
-  const rows = Math.max(2, Math.floor((a.ah - 16) / 38)), cw = (a.aw - 20) / 3;
-  for (let r = 0; r < rows; r++) for (let k = 0; k < 3; k++) {
-    const lit = ((r * 7 + k * 3 + (isMe ? 1 : 4)) % 3) !== 0;
-    c.fillStyle = lit ? '#fff4b0' : '#3a4a6a'; c.fillRect(x + 10 + k * cw, y + 12 + r * 38, cw - 8, 20);
+  DUEL.mt += dt;
+  if (DUEL.moving) DUEL.ai.root.position.y = 1.5 * (.5 - .5 * Math.cos(DUEL.mt * 1.4));
+  for (const S of [DUEL.me, DUEL.ai]) { if (S.hitT > 0) { S.hitT -= dt; S.char.rotation.z = Math.sin(S.hitT * 30) * .18 * (S.hitT / .5); } else S.char.rotation.z = 0; }
+  for (let i = DUEL.trails.length - 1; i >= 0; i--) {
+    const tr = DUEL.trails[i]; tr.life -= dt; tr.m.material.opacity = Math.max(0, tr.life * 2.5);
+    if (tr.life <= 0) { DUEL.grp.remove(tr.m); tr.m.geometry.dispose(); tr.m.material.dispose(); DUEL.trails.splice(i, 1); }
   }
-  c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = '900 16px system-ui,sans-serif'; c.fillText(label, a.x, y - 34);
-  c.font = '18px system-ui,sans-serif'; c.fillStyle = '#ff6b8a';
-  c.fillText('❤'.repeat(Math.max(0, hp)) + '♡'.repeat(Math.max(0, DUEL_WIN_HITS - hp)), a.x, y - 12);
+  if (DUEL.hold) { DUEL.holdT += dt; const t = (DUEL.holdT % DUEL_CYCLE) / DUEL_CYCLE; DUEL.pow = (t < .5 ? t * 2 : 2 - t * 2) * 100; }
+  if (DUEL.phase === 'shot') {
+    const S = DUEL.shot; S.t += dt;
+    const idx = Math.min(S.pts.length - 1, Math.floor(S.t / DUEL_DT));
+    DUEL.orb.position.copy(S.pts[idx]);
+    if (idx % 3 === 0) duelTrail(S.pts[idx], S.col);
+    if (S.t >= S.pts.length * DUEL_DT + .35) duelAfterShot();
+  } else if (DUEL.phase === 'ai') { DUEL.aiT -= dt; if (DUEL.aiT <= 0) duelAiShoot(); }
 }
-function duelDraw() {
-  const c = DUEL.g, W = DUEL.W, H = DUEL.H, g = DUEL.geo; if (!g) return;
-  const sk = c.createLinearGradient(0, 0, 0, H); sk.addColorStop(0, '#0b1233'); sk.addColorStop(1, '#2a1f4a');
-  c.fillStyle = sk; c.fillRect(0, 0, W, H);
-  const tnow = performance.now() / 700;
-  for (const s of DUEL.stars) { c.globalAlpha = .4 + .6 * Math.abs(Math.sin(s.p + tnow)); c.fillStyle = '#fff'; c.fillRect(s.x * W, s.y * H, s.r, s.r); }
-  c.globalAlpha = 1;
-  c.fillStyle = '#3c7a4b'; c.fillRect(0, g.me.gy, W, H - g.me.gy);
-  c.fillStyle = '#2d5e39'; c.fillRect(0, g.me.gy, W, 6);
-  if (DUEL.rule === 'obstacle') { const o = duelObs(); c.fillStyle = '#5a4a6a'; c.strokeStyle = '#2a1f33'; c.lineWidth = 3; c.fillRect(o.x, o.top, o.w, o.bottom - o.top); c.strokeRect(o.x, o.top, o.w, o.bottom - o.top); }
-  duelApt(c, g.me, '#ffe08a', '나', DUEL_WIN_HITS - DUEL.hits.ai, true);
-  duelApt(c, g.ai, '#f5a3c7', 'AI', DUEL_WIN_HITS - DUEL.hits.me, false);
-  c.font = '800 14px system-ui,sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff';
+function duelHud() {   // 글자·게이지·포물선 미리보기는 위에 겹쳐 그려요
+  const c = DUEL.g2, W = DUEL.W, H = DUEL.H;
+  c.clearRect(0, 0, W, H); c.textAlign = 'center';
+  for (const [S, name, col, hp] of [[DUEL.me, '나', '#ffe08a', DUEL_WIN_HITS - DUEL.hits.ai], [DUEL.ai, 'AI', '#f5a3c7', DUEL_WIN_HITS - DUEL.hits.me]]) {
+    const p = duelProj(new THREE.Vector3(S.root.position.x, S.root.position.y + DUEL.top + 2.6, 0));
+    c.font = '900 16px system-ui,sans-serif'; c.fillStyle = col; c.fillText(name, p.x, p.y - 22);
+    c.font = '16px system-ui,sans-serif'; c.fillStyle = '#ff6b8a'; c.fillText('❤'.repeat(Math.max(0, hp)) + '♡'.repeat(Math.max(0, DUEL_WIN_HITS - hp)), p.x, p.y - 4);
+  }
+  c.font = '800 14px system-ui,sans-serif'; c.fillStyle = '#fff';
   c.fillText('⚔ Lv.' + DUEL.lv + ' · ' + DUEL_WIN_HITS + '번 맞히면 승리 · 난이도 ' + DUEL.diff, W / 2, 26);
   if (DUEL.rule) { c.fillStyle = '#ffd166'; c.font = '800 13px system-ui,sans-serif'; c.fillText('룰: ' + duelRuleName(), W / 2, 46); }
-  if (DUEL.hold && DUEL.turn === 'me') {   // 조준선: 누르고 있는 동안 방향과 힘에 따라 길이가 변해요
-    const p = duelPath('me', DUEL.ang, DUEL.pow);
-    c.setLineDash([8, 8]); c.strokeStyle = 'rgba(159,243,255,.85)'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(p.ox, p.oy); c.lineTo(p.ex, p.ey); c.stroke(); c.setLineDash([]);
-    c.beginPath(); c.arc(p.ex, p.ey, 10, 0, Math.PI * 2); c.fillStyle = 'rgba(159,243,255,.45)'; c.fill();
-  }
-  if (DUEL.phase === 'shot' && DUEL.shot) {   // 번개: 지그재그로 날아가요
-    const s = DUEL.shot, pr = Math.min(1, s.t / .35);
-    const ex = s.ox + (s.ex - s.ox) * pr, ey = s.oy + (s.ey - s.oy) * pr;
-    c.strokeStyle = '#9ff3ff'; c.lineWidth = 4; c.shadowColor = '#9ff3ff'; c.shadowBlur = 14;
-    c.beginPath(); c.moveTo(s.ox, s.oy);
-    for (let i = 1; i <= 10; i++) { const f = i / 10; c.lineTo(s.ox + (ex - s.ox) * f + Math.sin(i * 2.3 + s.t * 30) * 10 * (1 - f), s.oy + (ey - s.oy) * f + Math.cos(i * 1.7 + s.t * 25) * 10 * (1 - f)); }
-    c.stroke(); c.shadowBlur = 0;
-    if (s.hit && pr >= 1) { const k = Math.min(1, Math.max(0, (s.t - .35) / .15)); c.beginPath(); c.arc(s.ex, s.ey, 30 * k + 6, 0, Math.PI * 2); c.strokeStyle = 'rgba(255,240,160,' + (1 - k * .6) + ')'; c.lineWidth = 6; c.stroke(); }
+  if (DUEL.hold && DUEL.turn === 'me') {   // 손을 떼면 이렇게 날아가요
+    const r = duelTrace(DUEL.me, DUEL.ai, 1, DUEL.ang, DUEL.pow);
+    c.setLineDash([6, 8]); c.strokeStyle = 'rgba(159,243,255,.9)'; c.lineWidth = 3; c.beginPath();
+    r.pts.forEach((v, i) => { const q = duelProj(v); if (i) c.lineTo(q.x, q.y); else c.moveTo(q.x, q.y); }); c.stroke(); c.setLineDash([]);
+    const e = duelProj(r.pts[r.pts.length - 1]); c.fillStyle = 'rgba(159,243,255,.8)'; c.beginPath(); c.arc(e.x, e.y, 7, 0, Math.PI * 2); c.fill();
   }
   const bx = W * .2, bw = W * .6, by = H - 46;   // 힘 게이지
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(bx - 4, by - 4, bw + 8, 26);
   c.fillStyle = DUEL.turn === 'me' ? '#ffd166' : '#667788'; c.fillRect(bx, by, bw * (DUEL.hold ? DUEL.pow : 0) / 100, 18);
   c.strokeStyle = '#fff'; c.lineWidth = 2; c.strokeRect(bx, by, bw, 18);
   c.fillStyle = '#fff'; c.font = '800 14px system-ui,sans-serif';
-  c.fillText(DUEL.turn === 'ai' ? 'AI가 조준 중…' : (DUEL.hold ? '힘 ' + Math.round(DUEL.pow) + '%' : '누른 채 방향을 정하고, 힘이 맞을 때 손을 떼요'), W / 2, by - 8);
-  if (DUEL.msgT > 0) {   // 결과 메시지
+  c.fillText(DUEL.turn === 'ai' ? 'AI가 던지는 중…' : (DUEL.hold ? '힘 ' + Math.round(DUEL.pow) + '% · 포물선을 보고 손을 떼요' : '화면을 누른 채 방향을 정하고, 힘이 맞을 때 손을 떼요'), W / 2, by - 8);
+  if (DUEL.msgT > 0) {
     c.globalAlpha = Math.min(1, DUEL.msgT); c.font = '900 22px system-ui,sans-serif';
     c.strokeStyle = '#000'; c.lineWidth = 4; c.strokeText(DUEL.msg, W / 2, H * .14); c.fillStyle = '#fff'; c.fillText(DUEL.msg, W / 2, H * .14);
     c.globalAlpha = 1;
   }
 }
 function duelResize() {
-  if (!DUEL.cv) return;
+  if (!DUEL.cv2) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   DUEL.W = innerWidth; DUEL.H = innerHeight;
-  DUEL.cv.width = Math.round(DUEL.W * dpr); DUEL.cv.height = Math.round(DUEL.H * dpr);
-  DUEL.cv.style.width = DUEL.W + 'px'; DUEL.cv.style.height = DUEL.H + 'px';
-  DUEL.g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  DUEL.geo = duelGeo();
-  if (!DUEL.stars.length) for (let i = 0; i < 70; i++) DUEL.stars.push({ x: Math.random(), y: Math.random() * .7, r: Math.random() < .2 ? 2 : 1, p: Math.random() * 6 });
+  DUEL.cv2.width = Math.round(DUEL.W * dpr); DUEL.cv2.height = Math.round(DUEL.H * dpr);
+  DUEL.cv2.style.width = DUEL.W + 'px'; DUEL.cv2.style.height = DUEL.H + 'px';
+  DUEL.g2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  duelFitCam();
 }
 function duelTopBar() {
   const top = DUEL.wrap.querySelector('#duelTop'); top.innerHTML = '';
@@ -4065,32 +4118,30 @@ function duelTopBar() {
   const exit = document.createElement('button'); exit.className = 'chip'; exit.style.pointerEvents = 'auto'; exit.textContent = '✕ 나가기'; exit.onclick = closeDuel;
   top.append(left, exit);
 }
-function duelNext() {
-  DUEL.lv = Math.min(DUEL_MAX_LV, DUEL.lv + 1);
-  DUEL.geo = duelGeo(); duelPickRule(); duelTopBar(); duelReset();
-  duelMsg('Lv.' + DUEL.lv + ' 시작!' + (DUEL.rule ? ' 새 룰: ' + duelRuleName() : ' 거리가 더 멀어졌어요'));
-}
 function duelLoop(now) {
   if (!DUEL.open) return;
   const dt = Math.min(.05, Math.max(0, (now - DUEL.last) / 1000)); DUEL.last = now;
   if (!DUEL.over) duelUpdate(dt);
-  duelDraw(); DUEL.raf = requestAnimationFrame(duelLoop);
+  renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera);
+  duelHud(); DUEL.raf = requestAnimationFrame(duelLoop);
 }
 function openDuel() {
   if (DUEL.open) return;
-  DUEL.open = true;
+  if (!scene || !renderer) { toast('화면을 준비하는 중이에요. 잠시 후 다시 눌러 주세요'); return; }
+  DUEL.open = true; DUEL.lv = 1; DUEL.trails = [];
+  DUEL.loginEl = document.getElementById('login'); if (DUEL.loginEl) DUEL.loginEl.style.display = 'none';
   const wrap = document.createElement('div'); wrap.id = 'duelWrap';
-  wrap.style.cssText = 'position:fixed;inset:0;z-index:70;background:#060a1a;touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:70;touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden;background:transparent';
   wrap.innerHTML = '<canvas id="duelCv" style="position:absolute;left:0;top:0"></canvas>' +
     '<div id="duelTop" style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;gap:6px;padding:8px 10px;pointer-events:none"></div>' +
     '<div id="duelEnd" style="display:none;position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:16px 20px;text-align:center;font-weight:900;font-size:18px;color:#4a3320;min-width:240px"></div>';
   document.body.appendChild(wrap);
-  DUEL.wrap = wrap; DUEL.cv = wrap.querySelector('#duelCv'); DUEL.g = DUEL.cv.getContext('2d');
-  const cv = DUEL.cv;
-  const aimFrom = e => {   // 누른 위치로 방향을 정해요 (오른쪽 방향만)
-    const r = cv.getBoundingClientRect(), g = DUEL.geo.me;
-    const dx = (e.clientX - r.left) - g.x, dy = g.top - (e.clientY - r.top);
-    DUEL.ang = clamp(Math.atan2(dy, dx), -1.45, 1.45);
+  DUEL.wrap = wrap; DUEL.cv2 = wrap.querySelector('#duelCv'); DUEL.g2 = DUEL.cv2.getContext('2d');
+  duelEnterScene(); duelBuild();
+  const cv = DUEL.cv2;
+  const aimFrom = e => {   // 누른 위치로 던질 방향을 정해요 (위쪽으로 포물선)
+    const h = duelProj(duelHead(DUEL.me)), r = cv.getBoundingClientRect();
+    DUEL.ang = clamp(Math.atan2(h.y - (e.clientY - r.top), (e.clientX - r.left) - h.x), -.2, 1.45);
   };
   cv.addEventListener('pointerdown', e => {
     if (DUEL.over || DUEL.phase !== 'aim' || DUEL.turn !== 'me') return;
@@ -4101,12 +4152,16 @@ function openDuel() {
   const release = () => { if (DUEL.hold) duelFire('me', DUEL.ang, DUEL.pow); };
   cv.addEventListener('pointerup', release); cv.addEventListener('pointercancel', release);
   window.addEventListener('resize', duelResize);
-  DUEL.lv = 1; duelTopBar(); duelResize(); duelPickRule(); duelReset();
+  DUEL.lv = 1; duelResize(); duelPickRule(); duelLayout(); duelTopBar(); duelReset();
   DUEL.last = performance.now(); DUEL.raf = requestAnimationFrame(duelLoop);
 }
 function closeDuel() {
   if (!DUEL.open) return;
   DUEL.open = false; cancelAnimationFrame(DUEL.raf); window.removeEventListener('resize', duelResize);
+  DUEL.hidden.forEach(o => { o.visible = true; }); DUEL.hidden = [];
+  if (DUEL.grp) { scene.remove(DUEL.grp); DUEL.grp = null; }
+  DUEL.trails = []; DUEL.orb = null;
+  if (DUEL.loginEl) DUEL.loginEl.style.display = '';
   if (DUEL.wrap) DUEL.wrap.remove(); DUEL.wrap = null; DUEL.hold = false;
 }
 const _bDuel = document.getElementById('bDuel'); if (_bDuel) _bDuel.onclick = openDuel;
