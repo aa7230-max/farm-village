@@ -2496,6 +2496,50 @@ function startNight() {
   if (isBoss) { STORY[G.day] || 0; }
   sfx('boss');
 }
+// 우주 연출: 'intro' = 시작할 때 운석이 행성으로 날아옴 / 'finale' = 스테이지 10 클리어 시 우주에서 운석이 깨짐
+function spaceFx(kind, onDone) {
+  if (!document.getElementById('spaceFxCss')) {
+    const st = document.createElement('style'); st.id = 'spaceFxCss';
+    st.textContent = '#spaceFx{position:fixed;inset:0;z-index:45;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at 50% 130%,#22346e,#060a1a 72%);opacity:0;transition:opacity .5s}' +
+      '#spaceFx.on{opacity:1}' +
+      '#spaceFx .s{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;animation:sfTw 1.4s infinite alternate}' +
+      '#spaceFx .pl{position:absolute;left:50%;top:70vh;width:150vmin;height:150vmin;margin:-75vmin 0 0 -75vmin;border-radius:50%;background:radial-gradient(circle at 35% 28%,#b9f2b0,#3f9a62 55%,#1c4a35);box-shadow:0 0 70px 14px rgba(140,230,255,.35)}' +
+      '#spaceFx .rk{position:absolute;left:0;top:0;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:42% 58% 52% 48%;background:radial-gradient(circle at 35% 35%,#9b8a78,#4a3d33);box-shadow:0 0 26px 8px rgba(255,130,50,.85);animation:sfFly var(--t) ease-in forwards}' +
+      '#spaceFx .fg{position:absolute;left:50%;top:40%;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:30%;background:#9b8a78;box-shadow:0 0 10px 3px rgba(255,160,70,.8);animation:sfBurst 1.6s ease-out forwards}' +
+      '#spaceFx .fl{position:absolute;left:50%;top:40%;width:50vmin;height:50vmin;margin:-25vmin 0 0 -25vmin;border-radius:50%;background:radial-gradient(#fff,rgba(255,220,140,0) 70%);animation:sfFlash .9s ease-out forwards}' +
+      '#spaceFx .msg{position:absolute;left:0;right:0;top:12%;text-align:center;color:#fff;font:900 21px/1.5 system-ui,sans-serif;text-shadow:0 2px 10px #000;opacity:0;animation:sfMsg .6s ease-out .2s forwards}' +
+      '@keyframes sfTw{from{opacity:.2}to{opacity:1}}' +
+      '@keyframes sfFly{from{transform:translate(82vw,6vh) scale(.5)}to{transform:translate(50vw,38vh) scale(1.1)}}' +
+      '@keyframes sfBurst{from{transform:translate(0,0) scale(1);opacity:1}to{transform:translate(var(--dx),var(--dy)) scale(.4) rotate(200deg);opacity:0}}' +
+      '@keyframes sfFlash{from{transform:scale(.2);opacity:1}to{transform:scale(2.2);opacity:0}}' +
+      '@keyframes sfMsg{to{opacity:1}}';
+    document.head.appendChild(st);
+  }
+  document.getElementById('spaceFx')?.remove();
+  const ov = document.createElement('div'); ov.id = 'spaceFx';
+  for (let i = 0; i < 70; i++) { const s = document.createElement('span'); s.className = 's'; s.style.left = rnd(0, 100) + '%'; s.style.top = rnd(0, 100) + '%'; s.style.animationDelay = rnd(0, 1.4).toFixed(2) + 's'; ov.appendChild(s); }
+  const pl = document.createElement('div'); pl.className = 'pl'; ov.appendChild(pl);
+  const msg = document.createElement('div'); msg.className = 'msg'; ov.appendChild(msg);
+  const rk = document.createElement('div'); rk.className = 'rk'; ov.appendChild(rk);
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('on'));
+  const end = (ms, fn) => setTimeout(fn, ms);
+  const close = (ms) => end(ms, () => { ov.classList.remove('on'); end(600, () => { ov.remove(); if (onDone) onDone(); }); });
+  if (kind === 'intro') {
+    rk.style.setProperty('--t', '3s'); msg.textContent = '☄ 운석이 우리 다이아를 노리고 있어요! 막아 주세요!';
+    close(3600);
+  } else {
+    rk.style.setProperty('--t', '2.2s'); msg.textContent = '🌟 우주에서 운석을 부숴 버렸어요!';
+    end(2200, () => {
+      rk.remove();
+      const fl = document.createElement('div'); fl.className = 'fl'; ov.appendChild(fl);
+      for (let i = 0; i < 12; i++) { const f = document.createElement('div'); f.className = 'fg';
+        const a = i / 12 * Math.PI * 2; f.style.setProperty('--dx', (Math.cos(a) * rnd(90, 170)).toFixed(0) + 'px'); f.style.setProperty('--dy', (Math.sin(a) * rnd(90, 170)).toFixed(0) + 'px');
+        ov.appendChild(f); }
+    });
+    close(5000);
+  }
+}
 function stageBanner(title, sub) {   // 크게 "클리어!" 문구를 띄워요
   let el = document.getElementById('stageBanner');
   if (!el) {
@@ -2511,6 +2555,7 @@ function stageBanner(title, sub) {   // 크게 "클리어!" 문구를 띄워요
 function dawn() {
   mons.forEach(m => { if (!m.dead) { m.state = 'flee'; } });
   bossRef = null; $('bossBar').style.display = 'none';
+  if (G.day === 10) spaceFx('finale');
   G.day += 1; mapExpand(); applyStageTheme();
   stageBanner(`☀ ${G.day - 1}일차 클리어!`, `${G.day}일차 아침이 밝았어요`);
   screenFlash('#ffe9a0', .45, .9); glowAt(px, 2.5, pz, 9, 0xffe9a0, 1.2); hitStop(.1);
@@ -3200,7 +3245,7 @@ function startGame(cont) {
   $('topR').classList.remove('hidden'); $('hud').classList.remove('hidden'); $('pad').classList.remove('hidden'); $('bPadAtk').classList.remove('hidden'); $('actions').classList.remove('hidden');
   running = true;
   buildWorld();
-  if (!cont) { storyQueue = (STORY[0]).slice(); openDialog(); }
+  if (!cont) spaceFx('intro', () => { storyQueue = (STORY[0]).slice(); openDialog(); });
   else toast('다시 왔군요! 🌿');
 }
 function buildWorld() {
@@ -3745,7 +3790,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.3';
+const APP_VERSION = '2026.11.23.4';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
