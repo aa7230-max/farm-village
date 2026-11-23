@@ -1265,17 +1265,28 @@ function updProjs(dt) {
   }
 }
 function hurtPlayer(d, src) {
-  if (invul > 0 || !G) return;
+  if (invul > 0 || !G || G.down) return;
   const dmg = Math.max(1, Math.round(d));
   G.hp = Math.max(0, G.hp - dmg);
   invul = .8; hitFx(.8); hitStop(.09); sfx('hurt'); vib('hurt'); screenFlash('rgba(255,50,50,1)', .45, .45);
   popup(px, py + 1.7, pz, '-' + dmg, '#ff5a5a');
   if (src) { const dx = px - src.x, dz = pz - src.z, dl = Math.hypot(dx, dz) || 1; vx += dx / dl * 6; vz += dz / dl * 6; }   // 뒤로 밀려요
   if (player) tweenTo(.8, 1, .3, v => player.scale.setScalar(v), 'back');   // 몸이 찌그러졌다 돌아와요
-  if (G.hp <= 0) {
-    popup(px, py + 2.4, pz, '쓰러짐', '#ff5a5a');
-    G.hp = G.maxHp; px = 0; pz = 5; toast('쓰러졌어요... 마을에서 다시 일어났어요.'); persistRun();
-  }
+  if (G.hp <= 0) { popup(px, py + 2.4, pz, '쓰러짐', '#ff5a5a'); playerDown(); }
+}
+// 체력이 0이 되면 캐릭터가 쓰러져요. 게임은 멈추고, 마을에서 다시 일어나거나 모험을 끝낼 수 있어요
+function playerDown() {
+  if (G.down) return;
+  G.down = true; freeze = true; modalOpen = true; sfx('hurt'); persistRun();
+  const ov = document.createElement('div'); ov.id = 'downOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(10,8,20,.72);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = '<div style="background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:22px 26px;text-align:center;font-weight:900;color:#4a3320;max-width:320px"><div style="font-size:44px">💀</div><div style="font-size:20px;margin:6px 0">캐릭터가 쓰러졌어요</div><div style="font-size:13px;font-weight:700;margin-bottom:14px">마을에서 다시 일어나면 체력이 절반으로 회복돼요.</div></div>';
+  const box = ov.firstChild;
+  const again = document.createElement('button'); again.className = 'btn primary'; again.textContent = '🏠 마을에서 다시 일어나기';
+  again.onclick = () => { ov.remove(); G.down = false; G.hp = Math.max(1, Math.round(G.maxHp / 2)); px = 0; pz = 5; invul = 1.5; freeze = false; modalOpen = false; persistRun(); toast('마을에서 다시 일어났어요'); };
+  const quit = document.createElement('button'); quit.className = 'btn'; quit.textContent = '🏁 모험 끝내기'; quit.style.marginLeft = '6px';
+  quit.onclick = () => { ov.remove(); G.down = false; freeze = false; modalOpen = false; goHome(); };
+  box.append(again, quit); document.body.appendChild(ov);
 }
 /* ================= 친구 방 (Supabase Realtime) ================= */
 const SB_URL = 'https://jozajkvlihkzdngstwgl.supabase.co';
