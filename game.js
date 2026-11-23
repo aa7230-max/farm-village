@@ -1180,7 +1180,7 @@ function spawnGiant(kind) {
 function spawnMidGiant() {
   const a = rnd(0, Math.PI * 2), x = Math.sin(a) * SPAWN_R, z = Math.cos(a) * SPAWN_R;
   const m = makeMon(pickKind(), x, z, {}); if (!m) return;
-  m.giant = true; m.hp = m.hpMax = Math.round(m.hp * 3);
+  m.giant = true; m.hp = m.hpMax = Math.round(m.hp * 12);   // 10번 이상 맞아야 쓰러져요
   m.obj.scale.multiplyScalar(1.9); m.shadow.scale.multiplyScalar(1.9);
   mons.push(m); if (!giantRef || giantRef.dead) giantRef = m;
   puff(x, z, 8, 0xffd0a0); toast('🧟 거대한 좀비가 나타났어요! 처치해 주세요.'); vib('boss');
@@ -1440,7 +1440,7 @@ function netSend(ev, payload) {
   if (!NET.ch) return;
   NET.ch.send({ type: 'broadcast', event: 'b', payload: Object.assign({ ev, from: NET.me }, payload || {}) });
 }
-function canAdmitNow() { return !!G && G.day <= 1 && !(G.kills > 0); } // 처음부터면 바로, 이미 진행 중이면 대기명단
+function canAdmitNow() { return !!G; } // 진행 중인 게임에도 초대 코드·링크로 바로 들어올 수 있어요
 function updWaitChip() {
   const ids = Object.keys(NET.waitList), el = $('waitChip'); if (!el) return;
   el.style.display = ids.length ? '' : 'none'; el.textContent = '⏳ ' + ids.length + ' 입장';
@@ -2493,7 +2493,7 @@ function weakDefense() { return clamp((8 - Object.keys(G.b || {}).length) / 8, 0
 function startNight() {
   const isBoss = G.day % 5 === 0;
   const wk = weakDefense();
-  const cnt = Math.min(80, Math.round((9 + G.day * 4) * (1 + .5 * wk)));
+  const cnt = Math.min(90, Math.round((9 + G.day * 5) * (1 + .5 * wk)));
   spawnQ = cnt; spawnT = .2;
   const wr = Math.random(); weather = wr < .35 ? 'rain' : wr < .55 ? 'fog' : 'clear'; bossSpawned = false; midGiantDone = false;
   toast(`🌙 ${G.day}일차 밤! 적 ${cnt}마리가 와요.${wk > .3 ? '\n🕳 건물이 부족해서 더 많이 몰려와요!' : ''}${isBoss ? '\n⚠ 보스 등장!' : ''}`);
@@ -2616,7 +2616,7 @@ function updateCycle(dt) {
       if (boss) { bossSpawned = true; spawnMon(G.day >= 10 ? 'snow_wolf' : (G.day % 10 === 5 ? 'skeleton_king' : 'mushroom_queen'), true); if (G.day < 10) spawnGiant('zombie_king'); }
       else if (!G.endless && !midGiantDone && spawnQ === Math.floor(Math.min(40, 6 + G.day * 3) / 2)) { midGiantDone = true; const gn = Math.min(7, 1 + aptLvSum()); for (let gi = 0; gi < gn; gi++) spawnMidGiant(); }
       else spawnMon();
-      spawnQ -= 1; spawnT = Math.max(.22, .6 - G.day * .03);
+      spawnQ -= 1; spawnT = Math.max(.14, .6 - G.day * .05);
     }
   }
   return nf;
@@ -2711,13 +2711,13 @@ function setupInput() {
   pad.addEventListener('pointerup', joyEnd); pad.addEventListener('pointercancel', joyEnd);
   window.addEventListener('keydown', e => { if (e.key.startsWith('Arrow')) e.preventDefault(); keys[e.key.toLowerCase()] = true; });
   document.addEventListener('pointerdown', e => { if (!e.target.closest || !e.target.closest('input,textarea')) { const a = document.activeElement; if (a && a.blur && a !== document.body && !a.closest('input,textarea')) a.blur(); } }, true);
-  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; if (e.code === 'KeyA') { attackHeld = false; chargeRelease(false); } });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; if (e.code === 'KeyA' || e.code === 'KeyE') { attackHeld = false; chargeRelease(false); } });
   // 왼손 행동 키: A 공격 · S 스킬 · D 건설 · Z 채집 · X 대화/거래 · Space 건물 놓기
-  const KEY_ACT = { KeyA: 'bHit', KeyS: 'bSkill', KeyD: 'bBuild', KeyZ: 'bGather', KeyX: 'bTalk', KeyF: 'bSnipe' };
+  const KEY_ACT = { KeyA: 'bHit', KeyE: 'bHit', KeyS: 'bSkill', KeyD: 'bBuild', KeyZ: 'bGather', KeyX: 'bTalk', KeyF: 'bSnipe' };
   window.addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if (!running || modalOpen || e.repeat) return;
-    if (e.code === 'KeyQ' || e.code === 'KeyE') { e.preventDefault(); camTurn(e.code === 'KeyQ' ? -1 : 1); return; }
+    if (e.code === 'KeyQ') { e.preventDefault(); camTurn(-1); return; }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { flashKey('Shift', '달리기'); return; }
     if (e.code === 'F3') { e.preventDefault(); toggleFps(); return; }
     if (e.code === 'KeyC') { scopeLock = !scopeLock; flashKey('C', scopeLock ? '줌 조준' : '줌 끔'); return; }
@@ -2742,7 +2742,7 @@ function setupInput() {
   });
   $('bJump').addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); doJump(); });
   $('bJump').onclick = () => {}; setupHitGrip();
-  $('bHit').title = '공격 (A)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
+  $('bHit').title = '공격 (A · E)'; $('bSkill').title = '스킬 (S)'; $('bBuild').title = '건설 (D) · 놓기 Space';
   $('bGather').title = '채집 (Z)'; $('bTalk').title = '대화/거래 (X)';
   // 화면 드래그로 카메라, 짧게 누르면 공격/건설
   let ptr = null;
