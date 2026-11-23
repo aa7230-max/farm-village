@@ -1316,6 +1316,14 @@ const ROOM_RE = /^\d{6}$/;
 const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, started: false, greeted: false, waitList: {}, wantAdmit: false, joinT: null, ready: false, mirrors: {}, monSeq: 0, monT: 0 };
 // 친구 화면: 방장이 계산한 적을 그대로 그려요 (적 AI·생성·피해는 방장 쪽에서만 계산해요)
 function guestMode() { return !!(NET.ch && !NET.host); }
+// 친구 쪽 공격은 mons 목록을 훑으니, 행동 중에만 친구 화면의 적(거울)을 잠깐 목록에 넣어요
+function withMirrors(fn) {
+  if (!guestMode()) return fn();
+  const arr = Object.values(NET.mirrors).filter(m => m && !mons.includes(m));
+  arr.forEach(m => mons.push(m));
+  try { return fn(); }
+  finally { arr.forEach(m => { const i = mons.indexOf(m); if (i >= 0) mons.splice(i, 1); }); }
+}
 function applyMirrors(list) {
   const seen = {};
   for (const [id, x, z, hp, hpMax, kind, boss, giant] of (list || [])) {
@@ -1323,7 +1331,7 @@ function applyMirrors(list) {
     let m = NET.mirrors[id];
     if (!m) {
       m = makeMon(kind, x, z, { boss: !!boss }); if (!m) continue;
-      m.nid = id;
+      m.nid = id; m.mirror = true;
       if (giant) { m.obj.scale.multiplyScalar(1.9); m.shadow.scale.multiplyScalar(1.9); }
       NET.mirrors[id] = m;
     }
@@ -1723,6 +1731,7 @@ function deathBurst(x, y, z, col) {   // 적이 터지듯이 조각으로 흩어
 function m0Size(col) { return col === 0xffd0ff ? 3.2 : 2; }
 function hitEnemy(m, dmg, opt) {
   if (!m || m.dead) return;
+  if (m.mirror) { if (guestMode() && m.nid) netSend('hit', { id: m.nid, d: Math.max(1, Math.round(dmg)) }); return; }
   opt = opt || {};
   const o = m.obj, d = Math.hypot(o.position.x - px, o.position.z - pz) || 1;
   m.hp -= dmg; m.flash = .14;
@@ -1850,7 +1859,8 @@ function aimedMonRay(maxD) {
   }
   return best;
 }
-function fpShot(c) {   // 1인칭 공격: 조준선으로 곧장 나가서, 처음 맞는 적이 쓰러져요
+function fpShot(c) { return withMirrors(() => fpShotRaw(c)); }
+function fpShotRaw(c) {   // 1인칭 공격: 조준선으로 곧장 나가서, 처음 맞는 적이 쓰러져요
   const range = c.rng * 1.6 + 4, m = aimedMonRay(range);
   const tp = m ? new THREE.Vector3(m.obj.position.x, 1.0, m.obj.position.z) : aimPoint(range);
   const mz = muzzle();
@@ -1948,7 +1958,8 @@ function laserAim() {   // 조준선(1인칭·3인칭 공통): 처음 맞는 적
   const end = best ? bc : far;
   return { mz, end, best };
 }
-function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을 따라 곧게 뻗어나가요. 지나가는 적을 모두 관통해요
+function fireLightningLine() { return withMirrors(() => fireLightningLineRaw()); }
+function fireLightningLineRaw() {   // 왼쪽 공격: 포물선 없이 조준선을 따라 곧게 뻗어나가요. 지나가는 적을 모두 관통해요
   if (sniper) { fireSniper(); return; }   // 지붕 위에서는 저격 판정으로 맞아요
   const cam = aimRay(), range = CLS[G.cls].rng * 2.4 + 6, mz = muzzle();
   let o = cam.o, dir = cam.d.clone();
@@ -1985,7 +1996,8 @@ function fireLightningLine() {   // 왼쪽 공격: 포물선 없이 조준선을
     sfx('skill'); hitFx(.1);
   }, G.cls, true);
 }
-function chargeRelease(assist) {
+function chargeRelease(assist) { return withMirrors(() => chargeReleaseRaw(assist)); }
+function chargeReleaseRaw(assist) {
   if (!chargeOn) return;
   const held = (performance.now() - holdStart) / 1000; chargeOn = false; chargePid = null;
   if (mode !== 'FIELD' || modalOpen || buildMode) { aimOverride = null; return; }
@@ -2022,7 +2034,8 @@ function chargedZap(lv) {
   atkCd = Math.max(atkCd, .25);
 }
 
-function attackNow(manual, power) {
+function attackNow(manual, power) { return withMirrors(() => attackNowRaw(manual, power)); }
+function attackNowRaw(manual, power) {
   const c = CLS[G.cls], chg = (power || 1) > 1;
   if (manual && !chg && (fpMode || scopeOn()) && !sniper) { fpShot(c); return true; }
   if (manual && !scopeOn()) { const d = camFwd(); if (Math.hypot(d.x, d.z) > .05) rotY = Math.atan2(d.x, d.z); }  // 캐릭터가 조준 방향을 봐요
@@ -2223,7 +2236,8 @@ function updXSkillsCd() {
     b.style.opacity = cd > 0 ? .55 : 1;
   });
 }
-function useSkill() {
+function useSkill() { return withMirrors(() => useSkillRaw()); }
+function useSkillRaw() {
   if (mode !== 'FIELD' || skillCd > 0 || modalOpen) return;
   if (G.cls === 'archer') fireArrowRain(); else if (G.cls === 'warrior') tailSweep(); else meteorStrike();
 }
