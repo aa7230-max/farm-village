@@ -3925,7 +3925,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.24.1';
+const APP_VERSION = '2026.11.24.2';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4040,6 +4040,8 @@ const DUEL_DIFF = {
   '어려움': { err: .04, perr: .035, yerr: .018, think: 1.1, guide: .22, comp: 1 }
 };
 const DUEL_WIN_HITS = 5, DUEL_MAX_LV = 5, DUEL_GRAV = 14, DUEL_DT = .02, DUEL_HALF = 1.75, DUEL_PS = 1.15;
+const DUEL_PMIN = 25 * Math.PI / 180, DUEL_PMAX = 1.3;   // 25도보다 낮게는 못 던져요 (거의 직선으로 맞추는 것을 막아요)
+const DUEL_PIL = { w: 1.1, above: 2.3 };   // 가운데 탑: 옥상보다 이만큼만 높고, 이만큼만 두꺼워요
 const DUEL_CLS_NAME = { mage: '마법사', archer: '궁수', warrior: '전사' };
 // 직업마다 던지는 것이 달라요
 const DUEL_PROJ = {
@@ -4071,8 +4073,19 @@ function duelProj(v) {   // 화면 뒤쪽 점은 null
 function duelWindA() { return DUEL.windOn ? DUEL.wind * 2.6 : 0; }   // 바람은 옆(x)으로 미는 힘이에요
 function duelHazards() { const h = []; if (DUEL.sway) h.push('건물 흔들림'); if (DUEL.windOn) h.push('옆바람'); if (DUEL.obstacleOn) h.push('가운데 탑'); if (DUEL.cloudsOn) h.push('구름'); return h; }
 function duelMsg(t, sec) { DUEL.msg = t; DUEL.msgT = sec || 2; }
-function duelPillarPos() { return { x: 0, z: 0, h: DUEL.top + 3.5 }; }
-function duelSwayX(S, t) { return S.baseX + DUEL.sway * S.amp * Math.sin(t * S.w + S.ph); }
+function duelPillarPos() { return { x: 0, z: 0, h: DUEL.top + DUEL_PIL.above }; }
+function duelSwayX(S, t) { return S.baseX + (S.off || 0) + DUEL.sway * S.amp * Math.sin(t * S.w + S.ph); }
+const DUEL_DODGE = 1.5;   // 피하기: 날아오는 번개를 보고 옆으로 한 걸음 (옥상 안에서만 움직여요)
+function duelCanDodge() { const S = DUEL.shot; return DUEL.mode === 'ai' && DUEL.phase === 'shot' && !!S && S.shooter === 'ai' && !S.dodged && S.end === 'char' && S.idx >= 2 && S.idx < S.pts.length - 2; }
+function duelDodge(dir) {
+  if (!duelCanDodge()) return;
+  const S = DUEL.shot; S.dodged = true;
+  DUEL.me.offT = DUEL.me.off = dir * DUEL_DODGE;   // 번개 계산에 바로 쓰도록 자리를 바로 옮겨요
+  const r = duelTrace(DUEL.ai, S.yaw, S.pitch, S.pow, DUEL.me);   // 옮긴 자리를 기준으로 번개 길을 다시 계산해요
+  S.pts = r.pts; S.end = r.end;
+  sfx('skill'); vib('place');
+  duelMsg(r.end === 'char' ? '😵 못 피했어요!' : '💨 피했어요!', 1.4);
+}
 function duelUnlockedWalls() { const n = profile.duelWin || 0; return DUEL_WALLS.filter(w => w[0] <= n); }
 function duelMyWall() { const u = duelUnlockedWalls(), c = profile.duelWall; return u.some(w => w[1] === c) ? c : u[0][1]; }
 
@@ -4182,8 +4195,8 @@ function duelBuild() {
   DUEL.me = duelSide(profile.cls || 'mage', PAL_COL[(profile.color | 0) % PAL_COL.length], duelMyWall(), profile.duelWin || 0, true);
   DUEL.ai = null; duelRandomOpp();
   DUEL.pillar = new THREE.Group();
-  const ph = DUEL.top + 3.5, pil = new THREE.Mesh(new THREE.BoxGeometry(1.6, ph, 1.6), new THREE.MeshLambertMaterial({ color: 0x6a5a7a })); pil.position.y = ph / 2; pil.castShadow = true;
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.2, 4), new THREE.MeshLambertMaterial({ color: 0xc96f5e })); cap.position.y = ph + .6; cap.rotation.y = Math.PI / 4;
+  const ph = DUEL.top + DUEL_PIL.above, pil = new THREE.Mesh(new THREE.BoxGeometry(DUEL_PIL.w, ph, DUEL_PIL.w), new THREE.MeshLambertMaterial({ color: 0x6a5a7a })); pil.position.y = ph / 2; pil.castShadow = true;
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(DUEL_PIL.w * .75, .9, 4), new THREE.MeshLambertMaterial({ color: 0xc96f5e })); cap.position.y = ph + .45; cap.rotation.y = Math.PI / 4;
   DUEL.pillar.add(pil, cap); DUEL.pillar.visible = false; grp.add(DUEL.pillar);
   DUEL.camPos = new THREE.Vector3(0, 12, 20); DUEL.camLook = new THREE.Vector3(0, 6, 0);
 }
@@ -4274,7 +4287,7 @@ function duelTrace(S, yaw, pitch, pow, T) {
     const t = i * DUEL_DT;
     const p = new THREE.Vector3(o.x + d.x * sp * t + .5 * wa * t * t, o.y + d.y * sp * t - .5 * DUEL_GRAV * t * t, o.z + d.z * sp * t);
     pts.push(p);
-    if (DUEL.obstacleOn && Math.abs(p.x - pp.x) <= .8 && Math.abs(p.z - pp.z) <= .8 && p.y <= pp.h + .6) { res.end = 'blocked'; break; }
+    if (DUEL.obstacleOn && Math.abs(p.x - pp.x) <= DUEL_PIL.w / 2 && Math.abs(p.z - pp.z) <= DUEL_PIL.w / 2 && p.y <= pp.h + .6) { res.end = 'blocked'; break; }
     if (T) { const h = duelTest(p, P.hitR, duelSwayX(T, DUEL.mt + t / DUEL_PS), T.root.position.z); if (h) { res.end = h; break; } }
     if (p.y < 0) break;
   }
@@ -4310,7 +4323,7 @@ function duelAiShoot() {   // AI: 내 옥상 가운데를 노려서 각도·힘�
   const cfg = DUEL_DIFF[DUEL.diff], o = duelHead(DUEL.ai), tp = DUEL.me.root.position, P = DUEL_PROJ[DUEL.ai.cls] || DUEL_PROJ.mage;
   const r2 = () => Math.random() * 2 - 1;
   let tx = tp.x;
-  const dz = tp.z - o.z, dy = DUEL.top + .3 - o.y, th = (DUEL.obstacleOn ? 1.05 : .78) + r2() * cfg.err;   // 탑이 있으면 더 높이 던져요
+  const dz = tp.z - o.z, dy = DUEL.top + .3 - o.y, th = Math.max(DUEL_PMIN, (DUEL.obstacleOn ? 1.05 : .78) + r2() * cfg.err);   // 탑이 있으면 더 높이 던져요
   let d = Math.hypot(tx - o.x, dz), c = Math.cos(th), den = d * Math.tan(th) - dy;
   let v = den > 0 ? Math.sqrt(DUEL_GRAV * d * d / (2 * c * c * den)) : 15;
   if (DUEL.windOn) {   // 바람에 밀릴 만큼 반대쪽을 노려요
@@ -4354,6 +4367,7 @@ function duelAfterShot() {
   duelAdvance(S.shooter);
 }
 function duelAdvance(shooter) {
+  DUEL.me.offT = 0; DUEL.ai.offT = 0;   // 피하기 자리는 다음 차례가 되면 제자리로 돌아와요
   if (DUEL.hits[shooter] >= DUEL_WIN_HITS) { DUEL.over = true; DUEL.win = shooter; DUEL.phase = 'done'; setTimeout(duelFinish, 900); return; }
   DUEL.turn = shooter === 'me' ? 'ai' : 'me';
   DUEL.phase = 'wait'; DUEL.aiT = 1.1;
@@ -4473,7 +4487,7 @@ function duelSetView(v) {
   DUEL.view = v; camera.fov = v === 'fp' ? 62 : 50; camera.updateProjectionMatrix();
   const b = DUEL.wrap && DUEL.wrap.querySelector('#duelView'); if (b) b.textContent = v === 'fp' ? '👁 1인칭' : '🎥 3인칭';
 }
-function duelAimClamp() { DUEL.yaw = clamp(DUEL.yaw, Math.PI - 1, Math.PI + 1); DUEL.pitch = clamp(DUEL.pitch, .1, 1.3); }
+function duelAimClamp() { DUEL.yaw = clamp(DUEL.yaw, Math.PI - 1, Math.PI + 1); DUEL.pitch = clamp(DUEL.pitch, DUEL_PMIN, DUEL_PMAX); }
 function duelCanAim() { return DUEL.open && !DUEL.over && DUEL.turn === 'me' && DUEL.phase === 'aim'; }
 // 카메라: 내 차례에는 내 눈(1인칭) 또는 어깨 너머(3인칭), 던지면 번개를 따라가고, 상대 차례에는 상대를 바라봐요
 function duelCam(dt) {
@@ -4521,6 +4535,8 @@ function duelUpdate(dt) {
   const zf = 1 - Math.exp(-dt * 2.2);   // 아파트가 새 거리로 천천히 물러나고, 라운드 2부터 흔들려요
   DUEL.me.root.position.z += (DUEL.zMe - DUEL.me.root.position.z) * zf;
   DUEL.ai.root.position.z += (DUEL.zAi - DUEL.ai.root.position.z) * zf;
+  for (const S of [DUEL.me, DUEL.ai]) { S.off = (S.off || 0) + ((S.offT || 0) - (S.off || 0)) * Math.min(1, dt * 10); }
+  if (DUEL.dodgeEl) DUEL.dodgeEl.style.display = duelCanDodge() ? 'flex' : 'none';
   for (const S of [DUEL.me, DUEL.ai]) { S.root.position.x = duelSwayX(S, DUEL.mt); S.root.rotation.z = DUEL.sway * .025 * S.amp * Math.sin(DUEL.mt * S.w + S.ph); }
   for (const c of DUEL.cloudObjs) { c.position.x += c.userData.v * dt; if (c.position.x > 11) c.position.x = -11; else if (c.position.x < -11) c.position.x = 11; }
   for (const S of [DUEL.me, DUEL.ai]) { const fl = S.apt.userData.flag; if (fl) fl.rotation.y = Math.sin(DUEL.mt * 3 + S.ph) * .25; }
@@ -4656,7 +4672,7 @@ function duelHud() {   // 글자·당김선·포물선 미리보기는 위에 �
   const ang = DUEL.wrap && DUEL.wrap.querySelector('#duelAng');
   if (ang) {
     ang.style.opacity = duelCanAim() ? '1' : '.45';
-    const k = ang.firstChild, hh = ang.clientHeight - 40, f = (1.3 - DUEL.pitch) / 1.2;
+    const k = ang.firstChild, hh = ang.clientHeight - 40, f = (DUEL_PMAX - DUEL.pitch) / (DUEL_PMAX - DUEL_PMIN);
     k.style.top = Math.round(2 + f * hh) + 'px'; const t = Math.round(DUEL.pitch * 180 / Math.PI) + '°'; if (k.textContent !== t) k.textContent = t;
   }
 }
@@ -4715,6 +4731,9 @@ function openDuel() {
     '<div id="duelAng" style="position:absolute;left:12px;top:30%;height:32%;width:46px;border-radius:23px;background:rgba(30,40,60,.55);border:2px solid rgba(255,255,255,.85);touch-action:none">' +
       '<div style="position:absolute;left:3px;width:36px;height:36px;border-radius:50%;background:#ffd166;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font:800 11px system-ui,sans-serif;color:#4a3320"></div>' +
       '<div style="position:absolute;top:-20px;left:-6px;right:-6px;text-align:center;color:#fff;font:800 12px system-ui,sans-serif;text-shadow:0 1px 2px #000">각도</div></div>' +
+    '<div id="duelDodge" style="display:none;position:absolute;left:0;right:0;bottom:24px;justify-content:space-between;padding:0 14px;pointer-events:none">' +
+      '<button id="dgL" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">◀ 왼쪽 피하기</button>' +
+      '<button id="dgR" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">오른쪽 피하기 ▶</button></div>' +
     '<button id="duelView" style="' + btn + ';left:14px;bottom:84px;padding:10px 14px;font-size:14px;background:rgba(40,50,70,.75)">🎥 3인칭</button>' +
     '<div id="duelEnd" style="display:none;position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:16px 20px;text-align:center;font-weight:900;font-size:18px;color:#4a3320;min-width:240px;max-width:88vw"></div>';
   document.body.appendChild(wrap);
@@ -4741,17 +4760,23 @@ function openDuel() {
   cv.addEventListener('pointerup', endPull); cv.addEventListener('pointercancel', endPull);
   // 왼쪽 각도 막대
   const ang = wrap.querySelector('#duelAng');
-  const setAng = e => { if (!duelCanAim()) return; const r = ang.getBoundingClientRect(); const f = clamp((e.clientY - r.top - 20) / Math.max(1, r.height - 40), 0, 1); DUEL.pitch = 1.3 - f * 1.2; duelAimClamp(); };
+  const setAng = e => { if (!duelCanAim()) return; const r = ang.getBoundingClientRect(); const f = clamp((e.clientY - r.top - 20) / Math.max(1, r.height - 40), 0, 1); DUEL.pitch = DUEL_PMAX - f * (DUEL_PMAX - DUEL_PMIN); duelAimClamp(); };
   ang.addEventListener('pointerdown', e => { e.stopPropagation(); setAng(e); try { ang.setPointerCapture(e.pointerId); } catch (x) { } ang._d = e.pointerId; });
   ang.addEventListener('pointermove', e => { if (ang._d === e.pointerId) setAng(e); });
   const angEnd = e => { if (ang._d === e.pointerId) ang._d = null; };
   ang.addEventListener('pointerup', angEnd); ang.addEventListener('pointercancel', angEnd);
   wrap.querySelector('#duelView').onclick = () => duelSetView(DUEL.view === 'fp' ? 'tp' : 'fp');
+  DUEL.dodgeEl = wrap.querySelector('#duelDodge');
+  wrap.querySelector('#dgL').onpointerdown = e => { e.stopPropagation(); duelDodge(-1); };
+  wrap.querySelector('#dgR').onpointerdown = e => { e.stopPropagation(); duelDodge(1); };
   // 키보드: ←→ 방향, ↑↓ 각도, 스페이스 꾹(힘이 차올라요) 떼면 발사, V 시점 (게임 본편 단축키와 겹치지 않게 먼저 받아요)
   const KM = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down' };
   DUEL.onKey = e => {
     if (!DUEL.open) return;
     if (e.target && e.target.closest && e.target.closest('input,textarea')) return;
+    if (duelCanDodge() && (e.code === 'ArrowLeft' || e.code === 'KeyA' || e.code === 'ArrowRight' || e.code === 'KeyD')) {
+      duelDodge(e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : 1); e.preventDefault(); e.stopImmediatePropagation(); return;
+    }
     if (KM[e.code]) DUEL.keys[KM[e.code]] = true;
     else if (e.code === 'Space') { if (!e.repeat) duelStartCharge(); }
     else if (e.code === 'KeyV') { if (!e.repeat) duelSetView(DUEL.view === 'fp' ? 'tp' : 'fp'); }
