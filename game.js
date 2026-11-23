@@ -104,7 +104,7 @@ function newRun(cls) {
 let G = null;               // 현재 런 상태
 const PAL_COL = [0xffd34d, 0xff8fb8, 0x7fd0ff, 0x8fe08a, 0xb99cff, 0xff9f5a];
 let profile = { nick: '', cls: 'mage', color: 0 };
-let settings = { sfx: true, vib: true, bgm: 50, sfxVol: 100 };   // bgm·sfxVol: 0~100
+let settings = { sfx: true, vib: true, bgm: 50, sfxVol: 100, camDist: 19 };   // bgm·sfxVol: 0~100
 let world, scene, camera, renderer, cv, app;
 let xhOn = true;
 let coreObj = null, coreRing = null, coreHalo = null, coreGem = null, coreHit = 0;
@@ -3020,7 +3020,7 @@ function updateCam(dt, moving) {
       xh.style.opacity = !xhOn && !sniper && !scopeOn() ? 0 : (sniper || scopeOn()) ? 1 : (play ? .8 : 0);
       xh.classList.toggle('lock', !!(play && G && CLS[G.cls] && aimTarget(CLS[G.cls].rng + 14)));
     } }
-  const el = sniper ? .32 : clamp(.55 - camPitch * .6, .3, 1.25), dist = sniper ? 6.5 : 19;   // 기본 카메라를 조금 멀리 뒀어요
+  const el = sniper ? .32 : clamp(.55 - camPitch * .6, .3, 1.25), dist = sniper ? 6.5 : clamp(settings.camDist || 19, 12, 30);   // 3인칭 거리는 설정에서 조절
   tpP.set(px + Math.sin(camYaw) * Math.cos(el) * dist, py + 1.2 + Math.sin(el) * dist, pz + Math.cos(camYaw) * Math.cos(el) * dist);
   { const lk = (sniper ? 3 : 0) + 6 * scopeBlend, lh = lk * Math.cos(camPitch), lv = lk * Math.sin(camPitch) + (sniper ? 0 : Math.max(0, camPitch - .3) * 9); tpL.set(px - Math.sin(camYaw) * lh, py + 1 - .2 * scopeBlend + lv, pz - Math.cos(camYaw) * lh); }
   const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
@@ -3745,7 +3745,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.2';
+const APP_VERSION = '2026.11.23.3';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
@@ -3813,6 +3813,7 @@ function setupSettings() {
   const sync = () => {
     $$('bgmVol').value = settings.bgm; $$('sfxVol').value = settings.sfxVol;
     $$('bgmVal').textContent = settings.bgm + '%'; $$('sfxVal').textContent = settings.sfxVol + '%';
+    $$('camDist').value = settings.camDist || 19; $$('camVal').textContent = (settings.camDist || 19) + ' (가까움 12 ~ 멀리 30)';
     $$('bSetSound').textContent = settings.sfx ? '🔊 효과음 켬' : '🔇 효과음 끔';
     $$('bSetVib').textContent = settings.vib ? '📳 진동 켬' : '📴 진동 끔';
     $$('verTxt').textContent = APP_VERSION;
@@ -3820,6 +3821,7 @@ function setupSettings() {
   $$('bSettings').onclick = () => { sync(); modal.classList.add('show'); audio(); };
   $$('bSetClose').onclick = () => modal.classList.remove('show');
   $$('bgmVol').oninput = e => { settings.bgm = +e.target.value; saveSettings(); sync(); applyMusicVol(); };
+  $$('camDist').oninput = e => { settings.camDist = +e.target.value; saveSettings(); sync(); };
   $$('sfxVol').oninput = e => { settings.sfxVol = +e.target.value; saveSettings(); sync(); };
   $$('sfxVol').onchange = () => sfx('place');
   $$('bSetSound').onclick = () => { settings.sfx = !settings.sfx; saveSettings(); sync(); if (settings.sfx) sfx('place'); };
