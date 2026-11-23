@@ -1323,6 +1323,7 @@ function applyMirrors(list) {
     let m = NET.mirrors[id];
     if (!m) {
       m = makeMon(kind, x, z, { boss: !!boss }); if (!m) continue;
+      m.nid = id;
       if (giant) { m.obj.scale.multiplyScalar(1.9); m.shadow.scale.multiplyScalar(1.9); }
       NET.mirrors[id] = m;
     }
@@ -1330,6 +1331,15 @@ function applyMirrors(list) {
     m.hp = hp; m.hpMax = hpMax;
   }
   for (const id in NET.mirrors) if (!seen[id]) { removeMon(NET.mirrors[id]); delete NET.mirrors[id]; }
+}
+function nearestMirror(range) {
+  let best = null, bd = range;
+  for (const id in NET.mirrors) {
+    const m = NET.mirrors[id]; if (!m || !m.obj) continue;
+    const d = Math.hypot(m.obj.position.x - px, m.obj.position.z - pz);
+    if (d < bd) { bd = d; best = m; }
+  }
+  return best;
 }
 function sendMons() {
   const list = [];
@@ -1522,6 +1532,7 @@ function netRecv(p) {
   }
   if (p.ev === 'cd') { if (LOBBY.open && !LOBBY.cd) startCountdown(p.ms || 5000, NET.host ? beginCoopRun : beginCoopJoin); return; }
   if (p.ev === 'mons') { if (!NET.host && G) applyMirrors(p.l); return; }
+  if (p.ev === 'hit') { if (NET.host && G) { const t = mons.find(m => m.nid === p.id); if (t && !t.dead) hitEnemy(t, +p.d || 1, { kb: .6 }); } return; }
   if (!G) return;
   if (p.ev === 'build') {
     if (G.b[p.k]) return;
@@ -2017,6 +2028,10 @@ function attackNow(manual, power) {
   if (manual && !scopeOn()) { const d = camFwd(); if (Math.hypot(d.x, d.z) > .05) rotY = Math.atan2(d.x, d.z); }  // 캐릭터가 조준 방향을 봐요
   const t = scopeOn() ? scopeTarget()
     : (manual ? (aimTarget(c.rng + 14) || (fpMode ? null : fwdMon(c.rng))) : nearestMon(c.rng));
+  if (!t && guestMode()) {   // 친구 화면: 가까운 적을 때리면 방장에게 알려요 (피해 계산은 방장 쪽)
+    const mm = nearestMirror(c.rng + 1.5);
+    if (mm) { const dm = baseHit(mm); zapFx(mm.obj.position, () => netSend('hit', { id: mm.nid, d: dm }), mm); return true; }
+  }
   if (!t) {
     if (!manual) return false;              // 자동 공격은 적이 있을 때만 나가요
     const nd = mode === 'FIELD' && !fpMode ? aimNode(5) : null;
