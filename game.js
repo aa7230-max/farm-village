@@ -2866,6 +2866,8 @@ app.addEventListener('pointerdown', e => {
   $('bLobbyCopy').onclick = copyInvite;
   $('bLobbyHome').onclick = goHome;
   $('bContinue').onclick = () => startGame(true);
+  // 홈 화면의 업데이트 확인: 설정의 업데이트 확인과 같은 기능을 바로 실행해요
+  $('bHomeUpd').onclick = () => { $('bSettings').click(); setTimeout(checkUpdate, 50); };
   $('bJoin').onclick = () => {
     // 초대 링크를 통째로 붙여넣어도 6자리 코드만 골라내요
     const code = (($('joinCode').value || '').match(/\d{6}/) || [])[0] || '';
