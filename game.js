@@ -2932,7 +2932,7 @@ app.addEventListener('pointerdown', e => {
   $('bLobbyHome').onclick = goHome;
   $('bContinue').onclick = () => startGame(true);
   // 홈 화면의 업데이트 확인: 설정의 업데이트 확인과 같은 기능을 바로 실행해요
-  $('bHomeUpd').onclick = () => { $('bSettings').click(); setTimeout(checkUpdate, 50); };
+  $('bHomeUpd').onclick = () => { try { const sb = $('bSettings'); if (sb) sb.click(); } catch (e) { } setTimeout(() => { try { checkUpdate(); } catch (e) { } }, 50); };
   // 설정 > 공격·스킬 버튼 위치 조작: 끌어서 옮기고 완료를 누르면 이 기기에 저장돼요
   $('bBtnEdit').onclick = () => {
     const pm = $('pauseModal'); if (pm && pm.classList.contains('show') && typeof closePause === 'function') closePause();
@@ -3796,11 +3796,12 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.8';
+const APP_VERSION = '2026.11.23.9';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
+let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
-  const msg = document.getElementById('updMsg'); if (!msg) return;
-  msg.textContent = '업데이트를 확인하는 중...';
+  const msg = document.getElementById('updMsg'); if (!msg || updBusy) return;
+  updBusy = true; msg.textContent = '업데이트를 확인하는 중...';
   fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(j => {
@@ -3808,7 +3809,8 @@ function checkUpdate() {
       msg.innerHTML = '🆕 새 버전 ' + j.version + ' 이 있어요. ' + (j.note || '') + '<br><button class="btn leaf" id="bApplyUpd" style="margin-top:8px">⬇ 지금 업데이트</button>';
       document.getElementById('bApplyUpd').onclick = () => applyUpdate(j.version);
     })
-    .catch(() => { msg.textContent = '⚠ 업데이트 정보를 가져오지 못했어요. 인터넷 연결을 확인해 주세요.'; });
+    .catch(() => { msg.textContent = '⚠ 업데이트 정보를 가져오지 못했어요. 인터넷 연결을 확인해 주세요.'; })
+    .finally(() => { updBusy = false; });
 }
 // 게임은 서버(Pages)에서 불러와요. 새 버전 번호로 다시 열면 최신 파일을 받아요 (APK 재설치 불필요)
 function applyUpdate(ver) {
