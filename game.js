@@ -3803,10 +3803,10 @@ function tick(now) {
         ghostB.traverse(o => { if (o.isMesh && o.material && o.material.transparent && o.material.emissive) { o.material.emissive.setHex(can ? 0x3cff7a : 0xff4d3c); o.material.emissiveIntensity = .3 + .1 * Math.sin(gameT * 6); } });
       }
     } else { ghost.visible = false; if (ghostB) ghostB.visible = false; }
-    // 집이 있으면 5초마다 최대 체력의 1%를 회복해요 (쓰러진 상태에서는 회복하지 않아요)
+    // 집이 있으면 20초마다 최대 체력의 1%를 회복해요 (쓰러진 상태에서는 회복하지 않아요)
     if (G && running && !G.down && G.hp > 0 && G.hp < G.maxHp && Object.values(G.b).some(b => b.t === 'HOUSE')) {
       G.regT = (G.regT || 0) + dt;
-      if (G.regT >= 5) { G.regT = 0; G.hp = Math.min(G.maxHp, G.hp + Math.max(1, Math.round(G.maxHp * .01))); }
+      if (G.regT >= 20) { G.regT = 0; G.hp = Math.min(G.maxHp, G.hp + Math.max(1, Math.round(G.maxHp * .01))); }
     } else if (G) G.regT = 0;
     // 게임 오버: 보석이 모두 사라지면
     const stored = Object.values(G.b).reduce((s, b) => s + (b.g || 0), 0);
