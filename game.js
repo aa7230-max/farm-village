@@ -3905,11 +3905,12 @@ setupShop();
 
 /* ================= 아파트 대결: 힘 게이지로 상대 아파트에 번개 맞히기 (AI 상대) ================= */
 const DUEL_DIFF = { '쉬움': { err: .2, perr: .18, think: 2.4 }, '보통': { err: .11, perr: .1, think: 1.7 }, '어려움': { err: .05, perr: .05, think: 1.1 } };
-const DUEL_WIN_HITS = 3, DUEL_CYCLE = 1.5;
-const DUEL = { open: false, diff: '보통', cv: null, g: null, W: 0, H: 0, geo: null, stars: [], turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .6, shot: null, shooter: null, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0, wrap: null };
+const DUEL_WIN_HITS = 5, DUEL_MAX_LV = 5, DUEL_CYCLE = 1.5;
+const DUEL = { open: false, lv: 1, diff: '보통', cv: null, g: null, W: 0, H: 0, geo: null, stars: [], turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim', hold: false, holdT: 0, pow: 0, ang: .6, shot: null, shooter: null, aiT: 0, over: false, win: null, msg: '', msgT: 0, last: 0, raf: 0, wrap: null };
 function duelGeo() {
   const W = DUEL.W, H = DUEL.H, gy = H * .8, ah = H * .24, aw = Math.min(W * .1, 96), top = gy - ah;
-  return { me: { x: W * .17, top, gy, aw, ah }, ai: { x: W * .83, top, gy, aw, ah }, maxR: W * .86 };
+  const sep = .6 + .05 * (DUEL.lv - 1);   // 레벨이 오를수록 두 아파트 사이 간격이 넓어져요 (.6 → .8)
+  return { me: { x: W * (.5 - sep / 2), top, gy, aw, ah }, ai: { x: W * (.5 + sep / 2), top, gy, aw, ah }, maxR: W * .9 };
 }
 // 발사 경로: 각도(ang)와 힘(pow, 0~100)으로 끝점을 계산해요. 'me'는 오른쪽, 'ai'는 왼쪽으로 쏩니다
 function duelPath(shooter, ang, pow) {
@@ -3946,10 +3947,13 @@ function duelAfterShot() {
 function duelFinish() {
   profile.duelPlay = (profile.duelPlay || 0) + 1; if (DUEL.win === 'me') profile.duelWin = (profile.duelWin || 0) + 1; saveProfile();
   const box = DUEL.wrap.querySelector('#duelEnd'); box.style.display = 'block';
-  box.innerHTML = (DUEL.win === 'me' ? '🏆 승리! 상대 아파트를 무너뜨렸어요' : '😈 아쉽게 졌어요') + '<div style="font-size:13px;font-weight:700;margin:6px 0 10px">전적 ' + (profile.duelWin || 0) + '승 / ' + profile.duelPlay + '판</div>';
+  box.innerHTML = (DUEL.win === 'me' ? (DUEL.lv >= DUEL_MAX_LV ? '👑 전 레벨 클리어!' : '🏆 Lv.' + DUEL.lv + ' 승리!') : '😈 아쉽게 졌어요') + '<div style="font-size:13px;font-weight:700;margin:6px 0 10px">전적 ' + (profile.duelWin || 0) + '승 / ' + profile.duelPlay + '판</div>';
   const again = document.createElement('button'); again.className = 'btn primary'; again.textContent = '다시 도전'; again.onclick = duelReset;
   const out = document.createElement('button'); out.className = 'btn'; out.textContent = '나가기'; out.style.marginLeft = '6px'; out.onclick = closeDuel;
-  box.append(again, out);
+  if (DUEL.win === 'me' && DUEL.lv < DUEL_MAX_LV) {
+    const next = document.createElement('button'); next.className = 'btn primary'; next.textContent = '다음 레벨 (Lv.' + (DUEL.lv + 1) + ')'; next.onclick = duelNext;
+    box.append(next, out, again);
+  } else box.append(again, out);
 }
 function duelReset() {
   DUEL.hits = { me: 0, ai: 0 }; DUEL.turn = 'me'; DUEL.phase = 'aim'; DUEL.hold = false; DUEL.pow = 0; DUEL.over = false; DUEL.win = null; DUEL.shot = null;
@@ -3987,7 +3991,7 @@ function duelDraw() {
   duelApt(c, g.me, '#ffe08a', '나', DUEL_WIN_HITS - DUEL.hits.ai, true);
   duelApt(c, g.ai, '#f5a3c7', 'AI', DUEL_WIN_HITS - DUEL.hits.me, false);
   c.font = '800 14px system-ui,sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff';
-  c.fillText('⚔ 아파트 대결 · 3번 맞히면 승리 · 난이도 ' + DUEL.diff, W / 2, 26);
+  c.fillText('⚔ Lv.' + DUEL.lv + ' · ' + DUEL_WIN_HITS + '번 맞히면 승리 · 난이도 ' + DUEL.diff, W / 2, 26);
   if (DUEL.hold && DUEL.turn === 'me') {   // 조준선: 누르고 있는 동안 방향과 힘에 따라 길이가 변해요
     const p = duelPath('me', DUEL.ang, DUEL.pow);
     c.setLineDash([8, 8]); c.strokeStyle = 'rgba(159,243,255,.85)'; c.lineWidth = 3;
@@ -4036,6 +4040,11 @@ function duelTopBar() {
   const exit = document.createElement('button'); exit.className = 'chip'; exit.style.pointerEvents = 'auto'; exit.textContent = '✕ 나가기'; exit.onclick = closeDuel;
   top.append(left, exit);
 }
+function duelNext() {
+  DUEL.lv = Math.min(DUEL_MAX_LV, DUEL.lv + 1);
+  DUEL.geo = duelGeo(); duelTopBar(); duelReset();
+  duelMsg('Lv.' + DUEL.lv + ' 시작! 거리가 더 멀어졌어요');
+}
 function duelLoop(now) {
   if (!DUEL.open) return;
   const dt = Math.min(.05, Math.max(0, (now - DUEL.last) / 1000)); DUEL.last = now;
@@ -4067,7 +4076,7 @@ function openDuel() {
   const release = () => { if (DUEL.hold) duelFire('me', DUEL.ang, DUEL.pow); };
   cv.addEventListener('pointerup', release); cv.addEventListener('pointercancel', release);
   window.addEventListener('resize', duelResize);
-  duelTopBar(); duelResize(); duelReset();
+  DUEL.lv = 1; duelTopBar(); duelResize(); duelReset();
   DUEL.last = performance.now(); DUEL.raf = requestAnimationFrame(duelLoop);
 }
 function closeDuel() {
