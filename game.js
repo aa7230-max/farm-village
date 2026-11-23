@@ -3796,7 +3796,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.7';
+const APP_VERSION = '2026.11.23.8';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
@@ -3871,6 +3871,8 @@ function setupSettings() {
   };
   $$('bSettings').onclick = () => { sync(); modal.classList.add('show'); audio(); };
   $$('bSetClose').onclick = () => modal.classList.remove('show');
+  $$('bGuide').onclick = () => $$('guideModal').classList.add('show');
+  $$('bGuideClose').onclick = () => $$('guideModal').classList.remove('show');
   $$('bgmVol').oninput = e => { settings.bgm = +e.target.value; saveSettings(); sync(); applyMusicVol(); };
   $$('camDist').oninput = e => { settings.camDist = +e.target.value; saveSettings(); sync(); };
   $$('sfxVol').oninput = e => { settings.sfxVol = +e.target.value; saveSettings(); sync(); };
