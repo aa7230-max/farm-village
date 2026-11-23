@@ -3925,7 +3925,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.24.3';
+const APP_VERSION = '2026.11.24.4';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4450,8 +4450,8 @@ function duelMyInfo() { return { cls: profile.cls || 'mage', nick: nickOf() || '
 function duelInvite() {
   if (!duelPeers()) { toast('같은 방에 친구가 있어야 해요. 먼저 함께하기로 방에 들어와 주세요'); return; }
   DUEL.pendSeed = (Math.random() * 1e9) | 0;
-  netSend('duel', Object.assign({ t: 'inv', seed: DUEL.pendSeed }, duelMyInfo()));
-  duelMsg('👥 친구에게 대결 신청을 보냈어요. 기다리는 중…', 5);
+  netSend('duel', Object.assign({ t: 'inv', seed: DUEL.pendSeed, room: NET.code || (G && G.room) || '' }, duelMyInfo()));
+  duelMsg('👥 친구에게 초대를 보냈어요. 친구가 게임을 고르는 중…', 5);
 }
 function duelStartNet(peer, info, seed, first) {
   DUEL.mode = 'net'; DUEL.peer = peer; DUEL.first = first; DUEL.flip = first === 'me' ? 1 : -1;
@@ -4469,10 +4469,17 @@ function duelInvitePrompt(p) {
   const old = document.getElementById('duelInv'); if (old) old.remove();
   const d = document.createElement('div'); d.id = 'duelInv';
   d.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:95;background:var(--paper);border:3px solid var(--line);border-radius:16px;padding:12px 14px;font-weight:900;color:#4a3320;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:88vw';
-  d.textContent = '⚔ ' + String(p.nick || '친구').slice(0, 10) + '님이 아파트 대결을 신청했어요';
+  d.textContent = '👥 ' + String(p.nick || '친구').slice(0, 10) + '님이 초대했어요. 무엇을 같이 할까요?';
   const row = document.createElement('div'); row.style.marginTop = '8px';
-  const ok = document.createElement('button'); ok.className = 'btn primary'; ok.textContent = '수락';
+  const ok = document.createElement('button'); ok.className = 'btn primary'; ok.textContent = '⚔ 아파트 대결';
+  const adv = document.createElement('button'); adv.className = 'btn leaf'; adv.textContent = '🌿 같이 모험'; adv.style.marginLeft = '6px';
   const no = document.createElement('button'); no.className = 'btn'; no.textContent = '거절'; no.style.marginLeft = '6px';
+  adv.onclick = () => {
+    d.remove();
+    if (DUEL.open) closeDuel();
+    if (!p.room || !ROOM_RE.test(p.room)) { toast('방 코드가 없어 모험에 들어갈 수 없어요'); return; }
+    netPending = p.room; enterWaiting();
+  };
   ok.onclick = () => {
     d.remove();
     if (!DUEL.open) openDuel();
@@ -4481,7 +4488,7 @@ function duelInvitePrompt(p) {
     duelStartNet(p.from, p, p.seed, 'ai');
   };
   no.onclick = () => { d.remove(); netSend('duel', { t: 'no', to: p.from }); };
-  row.append(ok, no); d.appendChild(row); document.body.appendChild(d);
+  row.append(ok, adv, no); d.appendChild(row); document.body.appendChild(d);
   setTimeout(() => { if (d.isConnected) d.remove(); }, 20000);
 }
 function duelNet(p) {
@@ -4716,7 +4723,7 @@ function duelTopBar() {
   const chip = (t, fn) => { const b = document.createElement('button'); b.className = 'chip'; b.style.pointerEvents = 'auto'; b.textContent = t; b.onclick = fn; left.appendChild(b); return b; };
   if (DUEL.mode === 'ai') {
     for (const d of Object.keys(DUEL_DIFF)) chip((d === DUEL.diff ? '● ' : '') + d, () => { DUEL.diff = d; duelTopBar(); duelReset(); });
-    if (NET.ch) chip('👥 친구와 대결', duelInvite);
+    if (NET.ch) chip('👥 친구 초대', duelInvite);
   } else chip('👥 ' + DUEL.oppName + '님과 대결 중', () => { });
   chip('🎨 꾸미기', duelCycleWall);
   const exit = document.createElement('button'); exit.className = 'chip'; exit.style.pointerEvents = 'auto'; exit.textContent = '✕ 나가기'; exit.onclick = closeDuel;
