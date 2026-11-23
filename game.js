@@ -1227,6 +1227,7 @@ function lampZap(k) {   // 공격이 전등에 닿으면 전기가 튀고, 전�
 function hurtBuildingAt(k, dmg, m, zap) {
   const b = G.b[k]; if (!b) return;
   if (b.t === 'LAMP') dmg = zap ? 2 : 1;   // 전등은 적에게 10번, 플레이어 공격에는 5번 맞으면 부서져요
+  else if (m && !zap) dmg *= 1 + .6 * weakDefense();   // 건물이 적으면 적이 더 쉽게 뚫고 들어와요
   b.hp -= dmg;
   const mesh = bmesh[k]; if (mesh) tweenTo(1.08, 1, .2, v => mesh.scale.set(v, 1 / v, v), 'out');
   const [bx, bz] = k.split(',').map(Number);
@@ -2487,12 +2488,15 @@ function nightF(c) { return sstep(DAY_LEN - 4, DAY_LEN + 6, c) * (1 - sstep(CYCL
 function sunTheta(c) { return c < DAY_LEN ? (c / DAY_LEN) * Math.PI : Math.PI + ((c - DAY_LEN) / NIGHT_LEN) * Math.PI; }
 const DAY_HEMI = new THREE.Color(0xdff3ff), NIGHT_HEMI = new THREE.Color(0x3b4d7f);
 const DAY_FOG = new THREE.Color(0xcde9f2), NIGHT_FOG = new THREE.Color(0x1b2a4d);
+// 허술함: 건물이 8개 이상이면 0, 하나도 없으면 1. 건물이 적을수록 적이 더 몰리고 더 쉽게 뚫고 들어와요
+function weakDefense() { return clamp((8 - Object.keys(G.b || {}).length) / 8, 0, 1); }
 function startNight() {
   const isBoss = G.day % 5 === 0;
-  const cnt = Math.min(60, 9 + G.day * 4);
+  const wk = weakDefense();
+  const cnt = Math.min(80, Math.round((9 + G.day * 4) * (1 + .5 * wk)));
   spawnQ = cnt; spawnT = .2;
   const wr = Math.random(); weather = wr < .35 ? 'rain' : wr < .55 ? 'fog' : 'clear'; bossSpawned = false; midGiantDone = false;
-  toast(`🌙 ${G.day}일차 밤! 적 ${cnt}마리가 와요.${isBoss ? '\n⚠ 보스 등장!' : ''}`);
+  toast(`🌙 ${G.day}일차 밤! 적 ${cnt}마리가 와요.${wk > .3 ? '\n🕳 건물이 부족해서 더 많이 몰려와요!' : ''}${isBoss ? '\n⚠ 보스 등장!' : ''}`);
   if (isBoss) { STORY[G.day] || 0; }
   sfx('boss');
 }
@@ -3790,7 +3794,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.23.4';
+const APP_VERSION = '2026.11.23.5';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg) return;
