@@ -226,6 +226,9 @@ button{font-family:inherit;cursor:pointer}
   #xSkills{display:none!important}
   #bSkill{display:flex!important;width:52px!important;height:52px!important}
 }
+
+@keyframes readyGlow{from{box-shadow:0 0 0 3px #ffd34d,0 0 8px #ffd34d}to{box-shadow:0 0 0 3px #fff3a0,0 0 22px #ffd34d}}
+#bLobbyStart.glow{animation:readyGlow 1s ease-in-out infinite alternate}
 </style>
 </head>
 <body>
@@ -269,7 +272,8 @@ button{font-family:inherit;cursor:pointer}
         <button class="btn leaf" id="bCoop">👥 함께하기</button>
       </div>
       <div class="row" style="align-items:center">
-        <input id="joinCode" inputmode="numeric" maxlength="6" placeholder="초대 코드 6자리 (예: 123412)" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:14px;border:2px solid var(--line);font-weight:800;text-transform:uppercase">
+        <input id="joinCode" maxlength="200" placeholder="초대 링크 또는 6자리 코드" autocomplete="off" style="flex:1;min-width:0;padding:10px;border-radius:14px;border:2px solid var(--line);font-weight:800">
+        <input id="joinNick" maxlength="10" placeholder="아이디" autocomplete="off" style="width:96px;padding:10px;border-radius:14px;border:2px solid var(--line);font-weight:800">
         <button class="btn" id="bJoin">🔗 참가</button>
       </div>
       <div class="row">
@@ -417,7 +421,7 @@ button{font-family:inherit;cursor:pointer}
     <div class="row"><button class="btn leaf" id="bLobbyShare">📤 초대 보내기</button><button class="btn" id="bLobbyCopy">📋 링크 복사</button></div>
     <div class="story" id="lobbyList"></div>
     <div class="note" id="lobbyNote"></div>
-    <div class="row"><button class="btn primary" id="bLobbyStart">▶ 시작 (5초 뒤)</button><button class="btn" id="bLobbyHome">🏠 홈 화면으로</button></div>
+    <div class="row"><button class="btn" id="bReady" style="display:none">✅ 준비하기</button><button class="btn primary" id="bLobbyStart">▶ 시작 (5초 뒤)</button><button class="btn" id="bLobbyHome">🏠 홈 화면으로</button></div>
   </div></div>
   <div id="cdOverlay"><div id="cdNum">5</div><div id="cdText">곧 함께 시작해요!</div></div>
 

@@ -1275,7 +1275,7 @@ function hurtPlayer(d, src) {
 const SB_URL = 'https://jozajkvlihkzdngstwgl.supabase.co';
 const SB_KEY = 'sb_publishable_Vs4P0TfjQ9qCvSYUs-tmaA_CKRVis_D';
 const ROOM_RE = /^\d{6}$/;
-const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, started: false, greeted: false, waitList: {}, wantAdmit: false, joinT: null };
+const NET = { sb: null, ch: null, code: null, me: null, remotes: {}, sendT: 0, started: false, greeted: false, waitList: {}, wantAdmit: false, joinT: null, ready: false };
 const NET_MAX = 4; // 한 방의 최대 인원 (나 포함)
 let netPending = ((location.hash.match(/room=(\d{6})/) || [])[1]) || null;
 function netClient() {
@@ -1358,7 +1358,7 @@ function netLeave() {
   const sb = netClient();
   if (NET.ch) { if (sb) sb.removeChannel(NET.ch); NET.ch = null; }
   for (const id in NET.remotes) world.remove(NET.remotes[id].g);
-  NET.remotes = {}; NET.code = null; NET.greeted = false; NET.host = false;
+  NET.remotes = {}; NET.code = null; NET.greeted = false; NET.host = false; NET.ready = false;
   closeLobby();
   updFriendChip();
 }
@@ -2857,16 +2857,25 @@ app.addEventListener('pointerdown', e => {
   $('bCoop').onclick = () => openLobby();   // 👥 함께하기: 먼저 대기실(방)을 만들고, 방장이 시작하면 5초 뒤에 함께 시작해요
   $('bHome').onclick = goHome;
   $('bLobbyStart').onclick = hostStart;
+  $('bReady').onclick = () => {
+    NET.ready = !NET.ready; if (NET.ch) NET.ch.track(presenceMeta());
+    toast(NET.ready ? '✅ 준비 완료! 방장 화면의 시작 버튼에 불이 들어와요' : '준비를 취소했어요');
+    renderLobby();
+  };
   $('bLobbyShare').onclick = shareLink;
   $('bLobbyCopy').onclick = copyInvite;
   $('bLobbyHome').onclick = goHome;
   $('bContinue').onclick = () => startGame(true);
   $('bJoin').onclick = () => {
-    const code = ($('joinCode').value || '').trim().toUpperCase();
-    if (!ROOM_RE.test(code)) { toast('초대 코드는 숫자 6자리예요 (예: 123412)'); return; }
+    // 초대 링크를 통째로 붙여넣어도 6자리 코드만 골라내요
+    const code = (($('joinCode').value || '').match(/\d{6}/) || [])[0] || '';
+    if (!ROOM_RE.test(code)) { toast('초대 링크나 6자리 코드를 붙여넣어 주세요'); return; }
+    const nk = (($('joinNick').value || '').trim() || nickOf()).slice(0, 10);
+    if (!nk) { toast('아이디를 입력해 주세요'); $('joinNick').focus(); return; }
+    profile.nick = nk; saveProfile(); $('nick').value = nk; $('joinNick').value = nk;
     netPending = code; enterWaiting();
   };
-  $('nick').value = profile.nick || '';
+  $('nick').value = profile.nick || ''; $('joinNick').value = profile.nick || '';
   $('nick').addEventListener('input', () => { profile.nick = $('nick').value.trim().slice(0, 10); saveProfile(); });
 }
 // 나무·돌·덤불을 쓰러뜨려 아이템을 얻습니다 (벌목 버튼, 공격 키 모두 이 함수를 씀)
@@ -3037,7 +3046,7 @@ function makeRoomCode() {
 }
 // 방 명단(presence)에 실리는 정보: 이름, 입장 순서, 방장 여부, 모험 시작 여부
 function presenceMeta() {
-  return { n: (profile.nick || '모험가').slice(0, 10), at: NET.at || Date.now(), h: NET.host ? 1 : 0, g: (G && running) ? 1 : 0 };
+  return { n: (profile.nick || '모험가').slice(0, 10), at: NET.at || Date.now(), h: NET.host ? 1 : 0, g: (G && running) ? 1 : 0, r: NET.ready ? 1 : 0 };
 }
 function trackMe() { if (NET.ch) NET.ch.track(presenceMeta()); }
 function showLobby() { LOBBY.open = true; $('lobbyModal').classList.add('show'); renderLobby(); }
@@ -3049,20 +3058,25 @@ function closeLobby() {
 function renderLobby() {
   if (!LOBBY.open || !NET.ch) return;
   const st = NET.ch.presenceState(), list = [];
-  for (const k in st) for (const m of st[k]) list.push({ k, n: m.n || '친구', h: !!m.h, g: !!m.g, at: m.at || 0 });
+  for (const k in st) for (const m of st[k]) list.push({ k, n: m.n || '친구', h: !!m.h, g: !!m.g, r: !!m.r, at: m.at || 0 });
   list.sort((a, b) => (a.at - b.at) || (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));
   $('lobbyCode').textContent = NET.code || '';
   $('lobbyLink').textContent = inviteLink();
   const box = $('lobbyList'); box.textContent = '';
   list.slice(0, NET_MAX).forEach((p, i) => {
     const d = document.createElement('div');
-    d.textContent = (i + 1) + '. ' + p.n + (p.h ? ' 👑 방장' : '') + (p.k === NET.me ? ' (나)' : '');
+    d.textContent = (i + 1) + '. ' + p.n + (p.h ? ' 👑 방장' : (p.r ? ' ✅ 준비' : '')) + (p.k === NET.me ? ' (나)' : '');
     box.appendChild(d);
   });
   const hostP = list.find(p => p.h);
   if (hostP) LOBBY.seenHost = true;
   if (!NET.host && LOBBY.seenHost && !hostP) { toast('방장이 방을 나갔어요'); goHome(); return; }
   $('bLobbyStart').style.display = NET.host ? '' : 'none';
+  // 친구가 준비하기를 누르면 방장의 시작 버튼에 불이 들어와요
+  const readyN = list.filter(p => p.r && !p.h).length;
+  const ls = $('bLobbyStart'); ls.classList.toggle('glow', NET.host && readyN > 0);
+  ls.textContent = readyN > 0 ? '▶ 시작 (준비 ' + readyN + '명 · 5초 뒤)' : '▶ 시작 (5초 뒤)';
+  const rb = $('bReady'); if (rb) { rb.style.display = NET.host ? 'none' : ''; rb.textContent = NET.ready ? '↩ 준비 취소' : '✅ 준비하기'; }
   const sb = $('bLobbyShare');
   if (sb) {
     sb.textContent = NET.host ? '📤 초대 보내기' : '👥 같이하기';
@@ -3360,7 +3374,8 @@ function wireMovableBtn(el) {   // 버튼을 길게(끌어서) 옮길 수 있게
 }
 const LAND_Q = '(orientation: landscape) and (max-height: 560px)';
 const isLand = () => window.matchMedia(LAND_Q).matches;
-const MOVABLE_IDS = ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
+const MOVABLE_IDS = ['bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
+try { localStorage.removeItem('farm-btnpos-bHit'); localStorage.removeItem('farm-act-pos'); } catch (e) { }   // 오른쪽 공격 묶음은 항상 오른쪽 고정
 function storeBaseStyles() {   // 처음 HTML에 적힌 기본 자리를 기억해요 (세로·가로 전환 때 되돌리려고)
   MOVABLE_IDS.concat(['actions']).forEach(id => {
     const el = document.getElementById(id); if (el && el.dataset.base === undefined) el.dataset.base = el.getAttribute('style') || '';
@@ -3376,10 +3391,7 @@ function layoutByOrientation() {   // 가로면 기본 배치(CSS)만 쓰고, �
     try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) { }
   });
   const box = document.getElementById('actions');
-  if (box) {
-    box.setAttribute('style', box.dataset.base || '');
-    if (!land) { try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) { } }
-  }
+  if (box) box.setAttribute('style', box.dataset.base || '');   // 오른쪽 묶음은 기본 자리(오른쪽 아래)에 고정
 }
 window.addEventListener('resize', layoutByOrientation);
 window.addEventListener('orientationchange', () => setTimeout(layoutByOrientation, 200));
@@ -3387,7 +3399,7 @@ function btnPlace(el, l, t) { el.style.position = 'fixed'; el.style.left = l + '
 function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   const g = document.getElementById('hitGrip'); if (g) g.remove();
   storeBaseStyles();
-  ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
+  ['bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
     el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
@@ -3396,7 +3408,7 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   window.addEventListener('pointermove', e => {
     const d = mvDrag; if (!d || e.pointerId !== d.pid || d.moved) return;
     const L = Math.hypot(e.clientX - d.sx, e.clientY - d.sy); if (L < 12) return;
-    const attack = d.id === 'bHit' || d.id === 'bPadAtk';
+    const attack = d.id === 'bPadAtk';
     if (attack && (aimOverride || performance.now() - d.t0 < 500)) return;   // 공격 버튼: 바로 끌면 조준, 오래 누르고 끌면 옮기기
     d.moved = true; chargeOn = false; aimOverride = null;
   });
@@ -3412,9 +3424,9 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
 }
 function setupActGrip() {
-  const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;
+  const box = $('actions'), grip = $('actGrip'); if (!box || !grip) return;   // 오른쪽 공격 묶음은 옮기지 않아요
+  return;
   storeBaseStyles();
-  if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-act-pos') || 'null'); if (sv) { box.style.left = sv.l + 'px'; box.style.top = sv.t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; } } catch (e) {}
   let gid = null, ox = 0, oy = 0;
   grip.addEventListener('pointerdown', e => { gid = e.pointerId; const r = box.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; grip.setPointerCapture && grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
   grip.addEventListener('pointermove', e => { if (e.pointerId !== gid) return; const l = clamp(e.clientX - ox, 0, innerWidth - box.offsetWidth), t = clamp(e.clientY - oy, 0, innerHeight - box.offsetHeight); box.style.left = l + 'px'; box.style.top = t + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto'; });
