@@ -3925,7 +3925,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.24.2';
+const APP_VERSION = '2026.11.24.3';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4059,6 +4059,7 @@ const DUEL = {
   orb: null, projs: {}, trails: [], fx: [], shot: null, replay: null, turn: 'me', hits: { me: 0, ai: 0 }, phase: 'aim',
   hold: false, holdT: 0, pow: 0, prevPow: null, yaw: Math.PI, yaw0: Math.PI, pitch: .75, pull: null, aiYaw: 0, aiT: 0, aiThink: 1,
   over: false, win: null, msg: '', msgT: 0, lastShot: null, tPrev: 0, raf: 0,
+  shieldCh: { me: 0, ai: 0 }, shieldUp: { me: false, ai: false }, throws: { me: 0, ai: 0 }, shieldEl: null,
   camPos: null, camLook: null, shake: 0, keys: {}, fov0: 50, sun0: null, onKey: null, onKeyUp: null, xhair: null, xhairD: ''
 };
 function duelRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -4075,8 +4076,15 @@ function duelHazards() { const h = []; if (DUEL.sway) h.push('건물 흔들림')
 function duelMsg(t, sec) { DUEL.msg = t; DUEL.msgT = sec || 2; }
 function duelPillarPos() { return { x: 0, z: 0, h: DUEL.top + DUEL_PIL.above }; }
 function duelSwayX(S, t) { return S.baseX + (S.off || 0) + DUEL.sway * S.amp * Math.sin(t * S.w + S.ph); }
+const DUEL_SHIELD_EVERY = 3;   // 3발을 던질 때마다 방패 1개가 생겨요 (최대 1개까지 모아 둘 수 있어요)
 const DUEL_DODGE = 1.5;   // 피하기: 날아오는 번개를 보고 옆으로 한 걸음 (옥상 안에서만 움직여요)
 function duelCanDodge() { const S = DUEL.shot; return DUEL.mode === 'ai' && DUEL.phase === 'shot' && !!S && S.shooter === 'ai' && !S.dodged && S.end === 'char' && S.idx >= 2 && S.idx < S.pts.length - 2; }
+function duelRaiseShield() {   // 내 차례에 미리 세워 두면, 상대가 다음에 던지는 한 발을 막아요
+  if (!DUEL.open || DUEL.over || DUEL.phase !== 'aim' || DUEL.turn !== 'me' || DUEL.shieldCh.me <= 0 || DUEL.shieldUp.me) return;
+  DUEL.shieldCh.me = 0; DUEL.shieldUp.me = true;
+  if (DUEL.mode === 'net') netSend('duel', { t: 'shield', to: DUEL.peer });
+  sfx('skill'); vib('place'); duelMsg('🛡 방패를 세웠어요. 상대의 다음 한 발을 막아요', 2);
+}
 function duelDodge(dir) {
   if (!duelCanDodge()) return;
   const S = DUEL.shot; S.dodged = true;
@@ -4300,6 +4308,11 @@ function duelFire(shooter, yaw, pitch, pow, forced) {
     r = duelTrace(S, yaw, pitch, pow, null);
     r.pts = r.pts.slice(0, Math.max(2, Math.min(r.pts.length, (forced.idx | 0) + 1))); r.end = forced.res || 'ground';
   } else r = duelTrace(S, yaw, pitch, pow, T);
+  // 방패: 맞으려던 번개를 막아요. 방패는 던지는 쪽이 아니라 맞는 쪽이 미리 세워 둬요 (두 화면이 같은 결과를 봐요)
+  const victim = shooter === 'me' ? 'ai' : 'me';
+  if (!forced && (r.end === 'char' || r.end === 'roof') && DUEL.shieldUp[victim]) r.end = 'shield';
+  if (r.end === 'shield') DUEL.shieldUp[victim] = false;
+  DUEL.throws[shooter]++; if (DUEL.throws[shooter] % DUEL_SHIELD_EVERY === 0) DUEL.shieldCh[shooter] = 1;
   DUEL.shot = { shooter, t: 0, idx: 0, pts: r.pts, end: r.end, col: P.col, pow, yaw, pitch, cls: S.cls };
   DUEL.phase = 'shot'; DUEL.hold = false; DUEL.pull = null;
   if (shooter === 'me') {
@@ -4320,6 +4333,7 @@ function duelBurst(p, col, big) {   // 맞은 자리에 번쩍 퍼지는 빛
   for (let i = 0; i < (big ? 14 : 8); i++) duelTrail(p.clone().add(new THREE.Vector3(rnd(-.9, .9), rnd(-.3, 1.1), rnd(-.9, .9))), col, rnd(.06, .14), rnd(.3, .6));
 }
 function duelAiShoot() {   // AI: 내 옥상 가운데를 노려서 각도·힘을 계산해요 (난이도에 따라 오차·바람 보정이 달라요)
+  if (DUEL.shieldCh.ai > 0 && !DUEL.shieldUp.ai && Math.random() < .5) { DUEL.shieldCh.ai = 0; DUEL.shieldUp.ai = true; duelMsg('🛡 ' + DUEL.oppName + '이(가) 방패를 세웠어요', 1.8); }
   const cfg = DUEL_DIFF[DUEL.diff], o = duelHead(DUEL.ai), tp = DUEL.me.root.position, P = DUEL_PROJ[DUEL.ai.cls] || DUEL_PROJ.mage;
   const r2 = () => Math.random() * 2 - 1;
   let tx = tp.x;
@@ -4339,7 +4353,8 @@ function duelAfterShot() {
   const end = S.pts[S.pts.length - 1], res = S.end, opp = DUEL.oppName;
   DUEL.lastShot = { pow: Math.round(S.pow), ang: Math.round(S.pitch * 180 / Math.PI), who: me ? '나' : opp, res };
   DUEL.orb.visible = false;
-  if (res === 'char' || res === 'roof') {
+  if (res === 'shield') { duelBurst(end, 0x9fe6ff, false); sfx('hit'); vib('place'); duelMsg(me ? '🛡 상대 방패에 막혔어요' : '🛡 방패로 막았어요!'); }
+  else if (res === 'char' || res === 'roof') {
     const dmg = res === 'char' ? 2 : 1;
     DUEL.hits[S.shooter] = Math.min(DUEL_WIN_HITS, DUEL.hits[S.shooter] + dmg);
     victim.hitT = .6; duelBurst(end, S.col, res === 'char');
@@ -4415,7 +4430,7 @@ function duelNextRound() {
 function duelReset(seed) {
   DUEL.seed = seed != null ? seed : (Math.random() * 1e9) | 0;
   DUEL.round = DUEL.mode === 'net' ? 1 : DUEL.lv; DUEL.mt = 0; DUEL.roundNote = ''; duelSetupRound(); duelLayout(true);
-  DUEL.lastShot = null; DUEL.hits = { me: 0, ai: 0 }; DUEL.turn = DUEL.first; DUEL.hold = false; DUEL.pull = null; DUEL.pow = 0;
+  DUEL.lastShot = null; DUEL.hits = { me: 0, ai: 0 }; DUEL.shieldCh = { me: 0, ai: 0 }; DUEL.shieldUp = { me: false, ai: false }; DUEL.throws = { me: 0, ai: 0 }; DUEL.turn = DUEL.first; DUEL.hold = false; DUEL.pull = null; DUEL.pow = 0;
   DUEL.phase = DUEL.first === 'me' ? 'aim' : 'wait'; DUEL.aiT = 1.2; DUEL.pendingShot = null; DUEL.replay = null;
   DUEL.over = false; DUEL.win = null; DUEL.shot = null; DUEL.yaw = Math.PI; DUEL.pitch = .75;
   if (DUEL.orb) DUEL.orb.visible = false;
@@ -4479,6 +4494,7 @@ function duelNet(p) {
   if (p.t === 'busy' || p.t === 'no') { DUEL.pendSeed = null; if (DUEL.open) duelMsg(p.t === 'busy' ? '친구가 지금은 대결할 수 없어요' : '친구가 대결을 거절했어요', 2.5); return; }
   if (!DUEL.open || DUEL.mode !== 'net' || p.from !== DUEL.peer) return;
   if (p.t === 'shot') { DUEL.pendingShot = p; return; }
+  if (p.t === 'shield') { DUEL.shieldCh.ai = 0; DUEL.shieldUp.ai = true; duelMsg('🛡 ' + DUEL.oppName + '이(가) 방패를 세웠어요', 2); return; }
   if (p.t === 'again') { duelReset(p.seed | 0); duelMsg('⚔ 한 판 더!', 2); return; }
   if (p.t === 'quit') { duelToAi(); duelMsg('친구가 대결을 나갔어요. AI와 계속해요', 3); }
 }
@@ -4537,6 +4553,9 @@ function duelUpdate(dt) {
   DUEL.ai.root.position.z += (DUEL.zAi - DUEL.ai.root.position.z) * zf;
   for (const S of [DUEL.me, DUEL.ai]) { S.off = (S.off || 0) + ((S.offT || 0) - (S.off || 0)) * Math.min(1, dt * 10); }
   if (DUEL.dodgeEl) DUEL.dodgeEl.style.display = duelCanDodge() ? 'flex' : 'none';
+  if (DUEL.shieldEl) { const my = DUEL.phase === 'aim' && DUEL.turn === 'me' && !DUEL.over; DUEL.shieldEl.style.display = my ? 'block' : 'none';
+    const lb = DUEL.shieldUp.me ? '🛡 방패 세움' : DUEL.shieldCh.me > 0 ? '🛡 방패 준비됨' : '🛡 방패 ' + (DUEL_SHIELD_EVERY - DUEL.throws.me % DUEL_SHIELD_EVERY) + '발 뒤';
+    if (DUEL.shieldEl.textContent !== lb) DUEL.shieldEl.textContent = lb; DUEL.shieldEl.style.opacity = DUEL.shieldCh.me > 0 && !DUEL.shieldUp.me ? '1' : '.5'; }
   for (const S of [DUEL.me, DUEL.ai]) { S.root.position.x = duelSwayX(S, DUEL.mt); S.root.rotation.z = DUEL.sway * .025 * S.amp * Math.sin(DUEL.mt * S.w + S.ph); }
   for (const c of DUEL.cloudObjs) { c.position.x += c.userData.v * dt; if (c.position.x > 11) c.position.x = -11; else if (c.position.x < -11) c.position.x = 11; }
   for (const S of [DUEL.me, DUEL.ai]) { const fl = S.apt.userData.flag; if (fl) fl.rotation.y = Math.sin(DUEL.mt * 3 + S.ph) * .25; }
@@ -4734,6 +4753,7 @@ function openDuel() {
     '<div id="duelDodge" style="display:none;position:absolute;left:0;right:0;bottom:24px;justify-content:space-between;padding:0 14px;pointer-events:none">' +
       '<button id="dgL" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">◀ 왼쪽 피하기</button>' +
       '<button id="dgR" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">오른쪽 피하기 ▶</button></div>' +
+    '<button id="duelShield" style="' + btn + ';right:14px;bottom:84px;padding:10px 14px;font-size:14px;background:rgba(40,120,200,.85);display:none">🛡 방패</button>' +
     '<button id="duelView" style="' + btn + ';left:14px;bottom:84px;padding:10px 14px;font-size:14px;background:rgba(40,50,70,.75)">🎥 3인칭</button>' +
     '<div id="duelEnd" style="display:none;position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:16px 20px;text-align:center;font-weight:900;font-size:18px;color:#4a3320;min-width:240px;max-width:88vw"></div>';
   document.body.appendChild(wrap);
@@ -4769,6 +4789,7 @@ function openDuel() {
   DUEL.dodgeEl = wrap.querySelector('#duelDodge');
   wrap.querySelector('#dgL').onpointerdown = e => { e.stopPropagation(); duelDodge(-1); };
   wrap.querySelector('#dgR').onpointerdown = e => { e.stopPropagation(); duelDodge(1); };
+  DUEL.shieldEl = wrap.querySelector('#duelShield'); DUEL.shieldEl.onpointerdown = e => { e.stopPropagation(); duelRaiseShield(); };
   // 키보드: ←→ 방향, ↑↓ 각도, 스페이스 꾹(힘이 차올라요) 떼면 발사, V 시점 (게임 본편 단축키와 겹치지 않게 먼저 받아요)
   const KM = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down' };
   DUEL.onKey = e => {
@@ -4780,6 +4801,7 @@ function openDuel() {
     if (KM[e.code]) DUEL.keys[KM[e.code]] = true;
     else if (e.code === 'Space') { if (!e.repeat) duelStartCharge(); }
     else if (e.code === 'KeyV') { if (!e.repeat) duelSetView(DUEL.view === 'fp' ? 'tp' : 'fp'); }
+    else if (e.code === 'KeyQ') { if (!e.repeat) duelRaiseShield(); }
     else if (e.code === 'Escape') closeDuel();
     else return;
     e.preventDefault(); e.stopImmediatePropagation();
