@@ -3055,6 +3055,11 @@ app.addEventListener('pointerdown', e => {
     ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'].forEach(id => { try { localStorage.removeItem('farm-btnpos-' + id); } catch (e) { } });
     layoutByOrientation(); toast('버튼을 기본 위치로 되돌렸어요');
   };
+  $('bInviteJoin').onclick = () => {
+    const code = (($('inviteJoinCode').value || '').match(/\d{6}/) || [])[0] || '';
+    if (!ROOM_RE.test(code)) { toast('6자리 방 코드를 입력해 주세요'); return; }
+    netPending = code; enterWaiting();
+  };
   $('bJoin').onclick = () => {
     // 초대 링크를 통째로 붙여넣어도 6자리 코드만 골라내요
     const code = (($('joinCode').value || '').match(/\d{6}/) || [])[0] || '';
@@ -3934,7 +3939,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.25.4';
+const APP_VERSION = '2026.11.25.5';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4086,6 +4091,65 @@ function duelProj(v) {   // 화면 뒤쪽 점은 null
   return { x: (p.x + 1) / 2 * DUEL.W, y: (1 - p.y) / 2 * DUEL.H };
 }
 function duelWindA() { return DUEL.windOn ? DUEL.wind * 2.6 : 0; }   // 바람은 옆(x)으로 미는 힘이에요
+// 친구 대결: 점수를 낼 때마다 장애물 1개를 놓을 수 있어요. 놓은 장애물은 친구 화면에도 같은 자리(반대쪽)에 나타나요
+const DUEL_OBS = { wall: { w: 2.4, h: 1.0, name: '낮은 벽' }, tower: { w: 1.3, h: 2.4, name: '높은 탑' } };
+let duelTok = { me: 0, ai: 0 }, duelExtra = [], duelObsType = 'wall';
+function duelClearExtra() { for (const o of duelExtra) { if (DUEL.grp) DUEL.grp.remove(o.mesh); o.mesh.geometry.dispose(); } duelExtra = []; }
+function duelAddObs(x, z, w, h) {
+  if (!DUEL.grp) return;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), new THREE.MeshLambertMaterial({ color: h > 2 ? 0x6a5a7a : 0xb98b5a }));
+  mesh.position.set(x, h / 2, z); mesh.castShadow = true; mesh.receiveShadow = true;
+  DUEL.grp.add(mesh); duelExtra.push({ x, z, w, h, mesh }); renderer.shadowMap.needsUpdate = true;
+}
+function duelGrantTok(shooter) { if (DUEL.mode === 'net') { duelTok[shooter] = (duelTok[shooter] || 0) + 1; duelObsRefresh(); } }
+function duelObsRefresh() {
+  const b = DUEL.wrap && DUEL.wrap.querySelector('#duelObs'); if (!b) return;
+  b.style.display = DUEL.mode === 'net' ? '' : 'none';
+  b.textContent = '🧱 장애물 추가 (' + (duelTok.me || 0) + ')'; b.style.opacity = duelTok.me > 0 ? '1' : '.55';
+}
+function duelPlaceObs(ci, ri, type) {
+  if (!DUEL.open || DUEL.mode !== 'net' || DUEL.over || !(duelTok.me > 0)) return;
+  const x = [-2.6, 0, 2.6][ci], z = [DUEL.zMe * .5, 0, DUEL.zAi * .5][ri], d = DUEL_OBS[type] || DUEL_OBS.wall;
+  duelTok.me--; duelAddObs(x, z, d.w, d.h);
+  netSend('duel', { t: 'obs', to: DUEL.peer, x, z, w: d.w, h: d.h });
+  duelMsg('🧱 ' + d.name + ' 설치! 친구 화면에도 나타나요', 2.5);
+  duelObsRefresh(); duelObsRender();
+}
+function duelObsRender() {
+  const pn = DUEL.wrap && DUEL.wrap.querySelector('#duelObsPanel'); if (!pn) return;
+  pn.innerHTML = '';
+  const head = document.createElement('div'); head.style.cssText = 'text-align:center;margin-bottom:6px';
+  head.textContent = duelTok.me > 0 ? '어디에 놓을까요? (남은 ' + duelTok.me + '개)' : '점수를 내면 장애물을 놓을 수 있어요';
+  pn.appendChild(head);
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;justify-content:center;margin-bottom:8px';
+  for (const t of ['wall', 'tower']) {
+    const b = document.createElement('button'); b.textContent = (duelObsType === t ? '● ' : '') + DUEL_OBS[t].name;
+    b.style.cssText = 'padding:6px 10px;border-radius:999px;border:2px solid #c9a46a;background:' + (duelObsType === t ? '#ffd166' : '#fff');
+    b.onclick = () => { duelObsType = t; duelObsRender(); }; row.appendChild(b);
+  }
+  pn.appendChild(row);
+  const grid = document.createElement('div'); grid.style.cssText = 'display:grid;grid-template-columns:auto repeat(3,1fr);gap:4px;align-items:center';
+  const rows = ['내 쪽', '가운데', '상대 쪽'], cols = ['왼쪽', '가운데', '오른쪽'];
+  grid.appendChild(document.createElement('div'));
+  cols.forEach(c => { const h = document.createElement('div'); h.textContent = c; h.style.cssText = 'text-align:center;font-size:12px'; grid.appendChild(h); });
+  rows.forEach((rn, ri) => {
+    const l = document.createElement('div'); l.textContent = rn; l.style.cssText = 'font-size:12px;padding-right:4px'; grid.appendChild(l);
+    cols.forEach((c, ci) => {
+      const b = document.createElement('button'); b.textContent = '＋'; b.disabled = !(duelTok.me > 0);
+      b.style.cssText = 'height:34px;border-radius:10px;border:2px solid #c9a46a;background:' + (duelTok.me > 0 ? '#fff' : '#eee') + ';font-weight:900';
+      b.onclick = () => duelPlaceObs(ci, ri, duelObsType); grid.appendChild(b);
+    });
+  });
+  pn.appendChild(grid);
+  const close = document.createElement('button'); close.textContent = '닫기'; close.style.cssText = 'margin-top:8px;width:100%;padding:6px;border-radius:12px;border:2px solid #c9a46a;background:#fff';
+  close.onclick = duelObsClose; pn.appendChild(close);
+}
+function duelObsClose() { const pn = DUEL.wrap && DUEL.wrap.querySelector('#duelObsPanel'); if (pn) pn.style.display = 'none'; }
+function duelObsToggle() {
+  const pn = DUEL.wrap && DUEL.wrap.querySelector('#duelObsPanel'); if (!pn) return;
+  if (pn.style.display === 'block') { duelObsClose(); return; }
+  pn.style.display = 'block'; duelObsRender();
+}
 function duelHazards() { const h = []; if (DUEL.sway) h.push('건물 흔들림'); if (DUEL.windOn) h.push('옆바람'); if (DUEL.obstacleOn) h.push('가운데 탑'); if (DUEL.cloudsOn) h.push('구름'); return h; }
 function duelMsg(t, sec) { DUEL.msg = t; DUEL.msgT = sec || 2; }
 function duelPillarPos() { return { x: 0, z: 0, h: DUEL.top + DUEL_PIL.above }; }
@@ -4323,6 +4387,7 @@ function duelTrace(S, yaw, pitch, pow, T) {
     const p = new THREE.Vector3(o.x + d.x * sp * t + .5 * wa * t * t, o.y + d.y * sp * t - .5 * DUEL_GRAV * t * t, o.z + d.z * sp * t);
     pts.push(p);
     if (DUEL.obstacleOn && Math.abs(p.x - pp.x) <= DUEL_PIL.w / 2 && Math.abs(p.z - pp.z) <= DUEL_PIL.w / 2 && p.y <= pp.h + .6) { res.end = 'blocked'; break; }
+    if (duelExtra.some(o => Math.abs(p.x - o.x) <= o.w / 2 && Math.abs(p.z - o.z) <= o.w / 2 && p.y <= o.h + .6)) { res.end = 'blocked'; break; }
     if (T) {
       const tx = duelSwayX(T, DUEL.mt + t / DUEL_PS), tz = T.root.position.z, h = duelTest(p, P.hitR, tx, tz);
       if (h) { res.end = h; break; }
@@ -4402,6 +4467,7 @@ function duelAfterShot() {
     const dmg = res === 'head' || res === 'balloon' ? win : res === 'char' ? 1 : (DUEL.rule === 'balloon' ? 0 : 1);
     if (res === 'balloon') popBalloon(victim, end);
     DUEL.hits[S.shooter] = Math.min(win, DUEL.hits[S.shooter] + dmg);
+    if (dmg > 0) duelGrantTok(S.shooter);
     victim.hitT = .6; duelBurst(end, S.col, res === 'char' || res === 'head');
     if (!me) { DUEL.shake = .45; sfx('hurt'); vib('hurt'); } else { sfx('kill'); vib('hit'); }
     const sc = DUEL.hits[S.shooter] + '/' + win;
@@ -4478,6 +4544,7 @@ function duelNextRound() {
 }
 function duelReset(seed) {
   DUEL.seed = seed != null ? seed : (Math.random() * 1e9) | 0;
+  duelClearExtra(); duelObsClose();
   DUEL.round = DUEL.mode === 'net' ? 1 : DUEL.lv; DUEL.mt = 0; DUEL.roundNote = ''; duelSetupRound(); duelLayout(true);
   duelResetBalloons();
   DUEL.lastShot = null; DUEL.hits = { me: 0, ai: 0 }; DUEL.shieldCh = { me: 0, ai: 0 }; DUEL.shieldUp = { me: false, ai: false }; DUEL.throws = { me: 0, ai: 0 }; DUEL.turn = DUEL.first; DUEL.hold = false; DUEL.pull = null; DUEL.pow = 0;
@@ -4510,7 +4577,7 @@ function duelInvite() {
   duelMsg('👥 친구에게 초대를 보냈어요. 친구가 게임을 고르는 중…', 5);
 }
 function duelStartNet(peer, info, seed, first, rule) {
-  DUEL.mode = 'net'; if (rule) DUEL.rule = rule; DUEL.peer = peer; DUEL.first = first; DUEL.flip = first === 'me' ? 1 : -1;
+  DUEL.mode = 'net'; duelTok = { me: 0, ai: 0 }; if (rule) DUEL.rule = rule; DUEL.peer = peer; DUEL.first = first; DUEL.flip = first === 'me' ? 1 : -1;
   DUEL.oppName = String(info.nick || '친구').slice(0, 10);
   const cls = DUEL_PROJ[info.cls] ? info.cls : 'mage', wall = DUEL_WALLS.some(w => w[1] === info.wall) ? info.wall : DUEL_WALLS[0][1];
   duelReplaceOpp(cls, PAL_COL[(info.color | 0) % PAL_COL.length], wall, Math.max(0, info.wins | 0));
@@ -4541,7 +4608,8 @@ function duelInvitePrompt(p) {
     d.remove();
     if (!DUEL.open) openDuel();
     if (!DUEL.open) return;
-    netSend('duel', Object.assign({ t: 'acc', to: p.from }, duelMyInfo()));
+    const acc = Object.assign({ t: 'acc', to: p.from }, duelMyInfo());
+    netSend('duel', acc); setTimeout(() => netSend('duel', acc), 700);   // 한 번 빠져도 다시 보내서 대결이 멈추지 않게 해요
     duelStartNet(p.from, p, p.seed, 'ai', p.rule === 'balloon' ? 'balloon' : 'body');
   };
   no.onclick = () => { d.remove(); netSend('duel', { t: 'no', to: p.from }); };
@@ -4554,9 +4622,10 @@ function duelNet(p) {
     duelInvitePrompt(p); return;
   }
   if (p.to && p.to !== NET.me) return;
-  if (p.t === 'acc') { if (!DUEL.open || DUEL.pendSeed == null || DUEL.mode === 'net') return; const s = DUEL.pendSeed; DUEL.pendSeed = null; duelStartNet(p.from, p, s, 'me', DUEL.rule); return; }
+  if (p.t === 'acc') { if (DUEL.pendSeed == null || DUEL.mode === 'net') return; if (!DUEL.open) { DUEL.pendSeed = null; toast('친구가 수락했지만 대결 화면이 닫혀 있어요. 다시 초대해 주세요'); return; } const s = DUEL.pendSeed; DUEL.pendSeed = null; duelStartNet(p.from, p, s, 'me', DUEL.rule); return; }
   if (p.t === 'busy' || p.t === 'no') { DUEL.pendSeed = null; if (DUEL.open) duelMsg(p.t === 'busy' ? '친구가 지금은 대결할 수 없어요' : '친구가 대결을 거절했어요', 2.5); return; }
   if (!DUEL.open || DUEL.mode !== 'net' || p.from !== DUEL.peer) return;
+  if (p.t === 'obs') { duelAddObs(-(+p.x || 0), -(+p.z || 0), +p.w || 2.4, +p.h || 1); duelMsg('🧱 친구가 장애물을 놓았어요', 2.5); return; }
   if (p.t === 'shot') { DUEL.pendingShot = p; return; }
   if (p.t === 'shield') { DUEL.shieldCh.ai = 0; DUEL.shieldUp.ai = true; duelMsg('🛡 ' + DUEL.oppName + '이(가) 방패를 세웠어요', 2); return; }
   if (p.t === 'again') { duelReset(p.seed | 0); duelMsg('⚔ 한 판 더!', 2); return; }
@@ -4795,6 +4864,7 @@ function duelTopBar() {
     chip(DUEL.rule === 'balloon' ? '🎈 풍선 룰' : '🎯 머리·몸통 룰', () => { DUEL.rule = DUEL.rule === 'balloon' ? 'body' : 'balloon'; duelTopBar(); duelReset(); });
     if (NET.ch) chip('👥 친구 초대', duelInvite);
   } else chip('👥 ' + DUEL.oppName + '님과 대결 중', () => { });
+  const ob = DUEL.wrap.querySelector('#duelObs'); if (ob) ob.onclick = duelObsToggle; duelObsRefresh();
   chip('🎨 꾸미기', duelCycleWall);
   const exit = document.createElement('button'); exit.className = 'chip'; exit.style.pointerEvents = 'auto'; exit.textContent = '✕ 나가기'; exit.style.whiteSpace = 'nowrap'; exit.onclick = closeDuel;
   top.append(left, exit);
@@ -4828,6 +4898,8 @@ function openDuel() {
   const btn = 'position:absolute;border:3px solid #fff;color:#fff;font-weight:900;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none';
   wrap.innerHTML = '<canvas id="duelCv" style="position:absolute;left:0;top:0"></canvas>' +
     '<div id="duelTop" style="position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 50px);display:flex;justify-content:space-between;align-items:flex-start;gap:6px;padding:8px 10px;pointer-events:none"></div>' +
+    '<button id="duelObs" style="display:none;position:absolute;left:12px;top:calc(env(safe-area-inset-top,0px) + 178px);padding:8px 12px;border-radius:999px;border:3px solid #fff;background:rgba(120,80,40,.92);color:#fff;font:900 13px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:manipulation;pointer-events:auto">🧱 장애물 추가 (0)</button>' +
+    '<div id="duelObsPanel" style="display:none;position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top,0px) + 220px);background:rgba(255,250,238,.97);border:3px solid #c9a46a;border-radius:16px;padding:10px;font:800 13px system-ui,sans-serif;color:#4a3320;pointer-events:auto;box-shadow:0 6px 20px rgba(0,0,0,.3)"></div>' +
     '<div id="duelAng" style="position:absolute;left:12px;top:30%;height:32%;width:46px;border-radius:23px;background:rgba(30,40,60,.55);border:2px solid rgba(255,255,255,.85);touch-action:none">' +
       '<div style="position:absolute;left:3px;width:36px;height:36px;border-radius:50%;background:#ffd166;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font:800 11px system-ui,sans-serif;color:#4a3320"></div>' +
       '<div style="position:absolute;top:-20px;left:-6px;right:-6px;text-align:center;color:#fff;font:800 12px system-ui,sans-serif;text-shadow:0 1px 2px #000">각도</div></div>' +
