@@ -3038,6 +3038,7 @@ app.addEventListener('pointerdown', e => {
   $('bLobbyShare').onclick = shareLink;
   $('bLobbyCopy').onclick = copyInvite;
   $('bLobbyHome').onclick = goHome;
+  $('bLobbyDuel').onclick = lobbyDuel;
   $('bContinue').onclick = () => startGame(true);
   // 홈 화면의 업데이트 확인: 설정의 업데이트 확인과 같은 기능을 바로 실행해요
   $('bHomeUpd').onclick = () => { try { const sb = $('bSettings'); if (sb) sb.click(); } catch (e) { } setTimeout(() => { try { checkUpdate(); } catch (e) { } }, 50); };
@@ -3264,6 +3265,7 @@ function renderLobby() {
   const readyN = list.filter(p => p.r && !p.h).length;
   const ls = $('bLobbyStart'); ls.classList.toggle('glow', NET.host ? readyN > 0 : guestsReady);
   ls.textContent = readyN > 0 ? '▶ 시작 (준비 ' + readyN + '명 · 5초 뒤)' : '▶ 시작 (5초 뒤)';
+  const ld = $('bLobbyDuel'); if (ld) ld.style.display = '';
   const rb = $('bReady'); if (rb) { rb.style.display = NET.host ? 'none' : ''; rb.textContent = NET.ready ? '↩ 준비 취소' : '✅ 준비하기'; }
   const sb = $('bLobbyShare');
   if (sb) {
@@ -3925,7 +3927,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.24.5';
+const APP_VERSION = '2026.11.25.1';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4484,6 +4486,12 @@ function duelNext() {
 /* ----- 친구와 대결 (같은 방 친구, Supabase 방송으로 던진 값만 주고받아요) ----- */
 function duelPeers() { if (!NET.ch) return 0; return Object.keys(NET.ch.presenceState()).filter(k => k !== NET.me).length; }
 function duelMyInfo() { return { rule: DUEL.rule, cls: profile.cls || 'mage', nick: nickOf() || '친구', wins: profile.duelWin || 0, wall: duelMyWall(), color: profile.color | 0 }; }
+function lobbyDuel() {
+  if (!duelPeers()) { toast('같은 방에 친구가 있어야 해요. 친구가 들어오면 다시 눌러 주세요'); return; }
+  if (!DUEL.open) openDuel();
+  if (!DUEL.open) return;
+  duelInvite();
+}
 function duelInvite() {
   if (!duelPeers()) { toast('같은 방에 친구가 있어야 해요. 먼저 함께하기로 방에 들어와 주세요'); return; }
   DUEL.pendSeed = (Math.random() * 1e9) | 0;
@@ -4514,6 +4522,7 @@ function duelInvitePrompt(p) {
   adv.onclick = () => {
     d.remove();
     if (DUEL.open) closeDuel();
+    if (NET.ch) { toast('이미 함께하기 대기실에 있어요'); return; }
     if (!p.room || !ROOM_RE.test(p.room)) { toast('방 코드가 없어 모험에 들어갈 수 없어요'); return; }
     netPending = p.room; enterWaiting();
   };
