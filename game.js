@@ -3928,13 +3928,15 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.25.2';
+const APP_VERSION = '2026.11.25.3';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
   const msg = document.getElementById('updMsg'); if (!msg || updBusy) return;
   updBusy = true; msg.textContent = '업데이트를 확인하는 중...';
-  fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store' })
+  const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const tmo = setTimeout(() => { if (ac) ac.abort(); }, 8000);   // 응답이 없으면 8초 뒤에 멈추고 안내해요
+  fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store', signal: ac ? ac.signal : undefined })
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(j => {
       if (j.version === APP_VERSION) { msg.textContent = '✅ 최신 버전이에요 (' + APP_VERSION + ')'; return; }
@@ -3942,7 +3944,7 @@ function checkUpdate() {
       document.getElementById('bApplyUpd').onclick = () => applyUpdate(j.version);
     })
     .catch(() => { msg.textContent = '⚠ 업데이트 정보를 가져오지 못했어요. 인터넷 연결을 확인해 주세요.'; })
-    .finally(() => { updBusy = false; });
+    .finally(() => { clearTimeout(tmo); updBusy = false; });
 }
 // 게임은 서버(Pages)에서 불러와요. 새 버전 번호로 다시 열면 최신 파일을 받아요 (APK 재설치 불필요)
 function applyUpdate(ver) {
@@ -4013,6 +4015,8 @@ function setupSettings() {
   $$('sfxVol').onchange = () => sfx('place');
   $$('bSetSound').onclick = () => { settings.sfx = !settings.sfx; saveSettings(); sync(); if (settings.sfx) sfx('place'); };
   $$('bSetVib').onclick = () => { settings.vib = !settings.vib; saveSettings(); sync(); if (settings.vib) vib('place'); };
+  // 첫 터치에서 바로 반응하도록 누를 때(pointerup)에도 확인해요. 이미 확인 중이면 중복 요청은 막혀요
+  $$('bUpdate').onpointerup = e => { if (e.button > 0) return; checkUpdate(); };
   $$('bUpdate').onclick = checkUpdate;
   // 소리는 사용자가 처음 누를 때부터 나와요 (브라우저 규칙)
   const unlock = () => { audio(); if (AC && AC.state === 'running') document.removeEventListener('pointerdown', unlock); };
@@ -4789,11 +4793,15 @@ function duelTopBar() {
   const exit = document.createElement('button'); exit.className = 'chip'; exit.style.pointerEvents = 'auto'; exit.textContent = '✕ 나가기'; exit.style.whiteSpace = 'nowrap'; exit.onclick = closeDuel;
   top.append(left, exit);
 }
+let duelShadowN = 0;
 function duelLoop(now) {
   if (!DUEL.open) return;
   const dt = Math.min(.05, Math.max(0, (now - DUEL.tPrev) / 1000)); DUEL.tPrev = now;
   if (!DUEL.over || DUEL.phase === 'done') duelUpdate(dt);
-  renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera);
+  // 그림자는 공이 날아갈 때만 자주 갱신하고, 조준 중에는 몇 프레임에 한 번만 갱신해서 끊김을 줄여요
+  duelShadowN = (duelShadowN + 1) % 8;
+  renderer.shadowMap.needsUpdate = DUEL.phase !== 'aim' || duelShadowN === 0;
+  renderer.render(scene, camera);
   duelHud(); DUEL.raf = requestAnimationFrame(duelLoop);
 }
 function duelStartCharge() { if (!duelCanAim() || DUEL.hold) return; DUEL.hold = true; DUEL.holdT = 0; DUEL.pow = 0; }
