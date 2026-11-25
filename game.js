@@ -3004,7 +3004,8 @@ app.addEventListener('pointerdown', e => {
   $('bFp').onclick = () => { fpMode = !fpMode; syncSettingsBtns(); toast(fpMode ? '1인칭 시점이에요. 몰입해 보세요!' : '3인칭 시점으로 돌아왔어요.'); };
   $('bCodex').onclick = () => { if (mode === 'FIELD' && !modalOpen) openCodex(); };
   $('bInvite').onclick = openInvite; $('bCopy').onclick = copyInvite; $('bShare').onclick = shareInvite;
-  $('friendChip').onclick = openInvite; $('waitChip').onclick = () => { const ids = Object.keys(NET.waitList); if (!ids.length) return; ids.forEach(id => netSend('admit', { to: id })); NET.waitList = {}; updWaitChip(); toast('🌿 대기 중인 친구들을 들여보냈어요'); };
+  $('friendChip').onclick = () => (NET.ch && !LOBBY.open && !running ? showLobby() : openInvite());
+  $('bLobbyClose').onclick = closeLobby; $('waitChip').onclick = () => { const ids = Object.keys(NET.waitList); if (!ids.length) return; ids.forEach(id => netSend('admit', { to: id })); NET.waitList = {}; updWaitChip(); toast('🌿 대기 중인 친구들을 들여보냈어요'); };
   $('hudTog').onclick = () => { try { $('hud').classList.toggle('collapsed'); } catch (e) { showErr('접기: ' + e.message); } };
   $('bXh').onclick = () => { xhOn = !xhOn; $('bXh').textContent = xhOn ? '🎯 조준점 켬' : '🎯 조준점 끔'; };
   $('topTog').onclick = () => { const f = $('topR').classList.toggle('folded'); $('topTog').textContent = f ? '☰' : '✕'; };
@@ -3927,7 +3928,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.25.1';
+const APP_VERSION = '2026.11.25.2';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
