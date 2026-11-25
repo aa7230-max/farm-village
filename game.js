@@ -3238,7 +3238,13 @@ function presenceMeta() {
   return { n: (profile.nick || '모험가').slice(0, 10), at: NET.at || Date.now(), h: NET.host ? 1 : 0, g: (G && running) ? 1 : 0, r: NET.ready ? 1 : 0, d: (G && G.down) ? 1 : 0 };
 }
 function trackMe() { if (NET.ch) NET.ch.track(presenceMeta()); }
-function showLobby() { LOBBY.open = true; $('lobbyModal').classList.add('show'); renderLobby(); }
+function showLobby() {
+  LOBBY.open = true;
+  // 아파트 대결 화면(최상위)보다 위에 떠야 닫기·버튼이 눌려요. 마을 화면 안에 갇혀 있으면 터치가 막혀서 옮겨 줘요
+  const m = $('lobbyModal'); if (m.parentNode !== document.body) document.body.appendChild(m);
+  m.style.position = 'fixed'; m.style.zIndex = '120';
+  m.classList.add('show'); renderLobby();
+}
 function closeLobby() {
   LOBBY.open = false; LOBBY.seenHost = false;
   $('lobbyModal').classList.remove('show');
@@ -3928,7 +3934,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.25.3';
+const APP_VERSION = '2026.11.25.4';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
