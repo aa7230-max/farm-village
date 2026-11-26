@@ -3055,9 +3055,13 @@ app.addEventListener('pointerdown', e => {
     ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'].forEach(id => { try { localStorage.removeItem('farm-btnpos-' + id); } catch (e) { } });
     layoutByOrientation(); toast('버튼을 기본 위치로 되돌렸어요');
   };
+  setupInAppBrowser();
   $('bInviteJoin').onclick = () => {
     const code = (($('inviteJoinCode').value || '').match(/\d{6}/) || [])[0] || '';
     if (!ROOM_RE.test(code)) { toast('6자리 방 코드를 입력해 주세요'); return; }
+    const nk = (($('inviteNick').value || '').trim() || nickOf()).slice(0, 10);
+    if (!nk) { toast('아이디를 입력해 주세요'); $('inviteNick').focus(); return; }
+    profile.nick = nk; saveProfile(); $('nick').value = nk; $('joinNick').value = nk;
     netPending = code; enterWaiting();
   };
   $('bJoin').onclick = () => {
@@ -3136,6 +3140,21 @@ function copyText(t) {
 }
 function showLinkBox(t) { const b = $('inviteBox'); if ($('inviteLink')) $('inviteLink').textContent = t; if (b) b.style.display = 'block'; if ($('inviteCode')) $('inviteCode').textContent = NET.code || ''; }
 function copyInvite() { copyText(inviteLink()); }
+// 카카오톡 안 브라우저는 접속이 자주 끊겨요. 들어오면 바깥 브라우저로 열도록 안내해요
+function setupInAppBrowser() {
+  if (!/KAKAOTALK/i.test(navigator.userAgent || '')) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:200;background:#fff6e0;border:2px solid #c9a46a;border-radius:14px;padding:8px 10px;font:800 12px system-ui,sans-serif;color:#4a3320;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;gap:8px;align-items:center;justify-content:space-between';
+  const t = document.createElement('span'); t.textContent = '카카오톡 안에서는 접속이 불안정해요. 다른 브라우저로 열어 주세요';
+  const b = document.createElement('button'); b.textContent = '열기';
+  b.style.cssText = 'border:0;border-radius:10px;padding:6px 10px;background:#ffd166;font-weight:900;white-space:nowrap';
+  const isAnd = /android/i.test(navigator.userAgent || '');
+  b.onclick = () => {
+    if (isAnd) { location.href = 'intent://' + location.host + location.pathname + location.search + location.hash + '#Intent;scheme=https;package=com.android.chrome;end'; }
+    else { copyText(location.href.split('#')[0] + location.hash); }
+  };
+  bar.append(t, b); document.body.appendChild(bar);
+}
 function openInvite() {
   if (needId()) return;
   openPause();
@@ -3587,6 +3606,8 @@ function wireMovableBtn(el) {   // 버튼을 길게(끌어서) 옮길 수 있게
 const LAND_Q = '(orientation: landscape) and (max-height: 560px)';
 const isLand = () => window.matchMedia(LAND_Q).matches;
 const MOVABLE_IDS = ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun', 'bSnipe'];
+const GRID_IDS = ['bHit', 'bSkill', 'bJump', 'bRun'];   // 오른쪽 묶음 버튼은 항상 정렬된 자리에 둬요 (끌어서 흩어지지 않게)
+GRID_IDS.forEach(id => { try { localStorage.removeItem('farm-btnpos-' + id); } catch (e) { } });
 try { localStorage.removeItem('farm-act-pos'); } catch (e) { }   // 예전 묶음 위치 기록만 지워요 (버튼별 위치는 설정에서 조작)
 function storeBaseStyles() {   // 처음 HTML에 적힌 기본 자리를 기억해요 (세로·가로 전환 때 되돌리려고)
   MOVABLE_IDS.concat(['actions']).forEach(id => {
@@ -3599,7 +3620,7 @@ function layoutByOrientation() {   // 가로면 기본 배치(CSS)만 쓰고, �
   MOVABLE_IDS.forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     el.setAttribute('style', el.dataset.base || '');
-    if (land) return;
+    if (land || GRID_IDS.includes(id)) return;
     try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) { }
   });
   const box = document.getElementById('actions');
@@ -3613,7 +3634,7 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   storeBaseStyles();
   ['bHit', 'bPadAtk', 'bSkill', 'bJump', 'bRun'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
-    if (!isLand()) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
+    if (!isLand() && !GRID_IDS.includes(id)) try { const sv = JSON.parse(localStorage.getItem('farm-btnpos-' + id) || 'null'); if (sv) btnPlace(el, clamp(sv.l, 0, innerWidth - 70), clamp(sv.t, 0, innerHeight - 70)); } catch (e) {}
     el.addEventListener('click', e => { if (el._supp) { el._supp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     el.addEventListener('pointerdown', e => { if (e.button > 0) return; const r = el.getBoundingClientRect(); mvDrag = { el, id, pid: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false, t0: performance.now() }; });
   });
@@ -3630,7 +3651,8 @@ function setupHitGrip() {   // 버튼 위치 불러오기 + 끌어서 옮기기
   });
   const end = e => {
     const d = mvDrag; if (!d || e.pointerId !== d.pid) return;
-    if (d.moved) { d.el._supp = true; try { localStorage.setItem('farm-btnpos-' + d.id, JSON.stringify({ l: parseInt(d.el.style.left, 10) || 0, t: parseInt(d.el.style.top, 10) || 0 })); } catch (x) {} }
+    if (d.moved && GRID_IDS.includes(d.id)) { d.el._supp = true; d.el.style.transform = ''; try { layoutByOrientation(); } catch (x) { } }
+    else if (d.moved) { d.el._supp = true; try { localStorage.setItem('farm-btnpos-' + d.id, JSON.stringify({ l: parseInt(d.el.style.left, 10) || 0, t: parseInt(d.el.style.top, 10) || 0 })); } catch (x) {} }
     mvDrag = null;
   };
   window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
@@ -3939,7 +3961,7 @@ function tick(now) {
 })().catch(e => showErr('BOOT: ' + (e.stack || e.message)));
 
 /* ================= 설정 · 업데이트 확인 ================= */
-const APP_VERSION = '2026.11.25.5';
+const APP_VERSION = '2026.11.26.1';
 const UPDATE_URL = 'https://aa7230-max.github.io/farm-village/version.json';
 let updBusy = false;   // 확인 중에 다시 눌러도 요청이 겹치지 않게 해요
 function checkUpdate() {
@@ -4686,6 +4708,7 @@ function duelUpdate(dt) {
   DUEL.ai.root.position.z += (DUEL.zAi - DUEL.ai.root.position.z) * zf;
   for (const S of [DUEL.me, DUEL.ai]) { S.off = (S.off || 0) + ((S.offT || 0) - (S.off || 0)) * Math.min(1, dt * 10); }
   if (DUEL.dodgeEl) DUEL.dodgeEl.style.display = duelCanDodge() ? 'flex' : 'none';
+  if (DUEL.stepEl) DUEL.stepEl.style.display = duelCanAim() ? 'block' : 'none';
   if (DUEL.shieldEl) { const my = DUEL.phase === 'aim' && DUEL.turn === 'me' && !DUEL.over; DUEL.shieldEl.style.display = my ? 'block' : 'none';
     const lb = DUEL.shieldUp.me ? '🛡 방패 세움' : DUEL.shieldCh.me > 0 ? '🛡 방패 준비됨' : '🛡 방패 ' + (DUEL_SHIELD_EVERY - DUEL.throws.me % DUEL_SHIELD_EVERY) + '발 뒤';
     if (DUEL.shieldEl.textContent !== lb) DUEL.shieldEl.textContent = lb; DUEL.shieldEl.style.opacity = DUEL.shieldCh.me > 0 && !DUEL.shieldUp.me ? '1' : '.5'; }
@@ -4892,6 +4915,10 @@ function openDuel() {
   DUEL.open = true; DUEL.lv = 1; DUEL.trails = []; DUEL.fx = []; DUEL.keys = {}; DUEL.orb = null;
   DUEL.mode = 'ai'; DUEL.peer = null; DUEL.first = 'me'; DUEL.flip = 1; DUEL.oppName = 'AI'; DUEL.pendSeed = null; DUEL.prevPow = null;
   DUEL.loginEl = document.getElementById('login'); if (DUEL.loginEl) DUEL.loginEl.style.display = 'none';
+  // 시작 전 표지(오프닝)가 남아 있으면 대결 화면 뒤로 비쳐 겹쳐요. 대결 동안은 표지와 대화창을 숨겨요
+  DUEL.introEl = document.getElementById('intro'); DUEL.introWas = !!(DUEL.introEl && DUEL.introEl.style.display !== 'none');
+  if (DUEL.introWas) DUEL.introEl.style.display = 'none';
+  closeDialog();
   DUEL.xhair = document.getElementById('xhair'); if (DUEL.xhair) { DUEL.xhairD = DUEL.xhair.style.display; DUEL.xhair.style.display = 'none'; }   // 본편 조준점은 숨겨요
   const wrap = document.createElement('div'); wrap.id = 'duelWrap';
   wrap.style.cssText = 'position:fixed;inset:0;z-index:70;touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden;background:transparent';
@@ -4906,6 +4933,9 @@ function openDuel() {
     '<div id="duelDodge" style="display:none;position:absolute;left:0;right:0;bottom:24px;justify-content:space-between;padding:0 14px;pointer-events:none">' +
       '<button id="dgL" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">◀ 왼쪽 피하기</button>' +
       '<button id="dgR" style="' + btn + ';position:static;pointer-events:auto;padding:14px 16px;font-size:16px;background:rgba(40,120,200,.9)">오른쪽 피하기 ▶</button></div>' +
+    '<div id="duelStep" style="display:none;position:absolute;right:12px;bottom:150px;width:150px;height:150px;pointer-events:none">' +
+      ['up','left','right','down'].map(k => '<button data-k="' + k + '" style="position:absolute;width:50px;height:50px;border-radius:50%;border:3px solid #fff;background:rgba(30,40,60,.72);color:#fff;font:900 20px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.35);touch-action:none;pointer-events:auto;' + ({up:'left:50px;top:0',left:'left:0;top:50px',right:'right:0;top:50px',down:'left:50px;bottom:0'}[k]) + '">' + ({up:'▲',left:'◀',right:'▶',down:'▼'}[k]) + '</button>').join('') +
+    '</div>' +
     '<button id="duelShield" style="' + btn + ';right:14px;bottom:84px;padding:10px 14px;font-size:14px;background:rgba(40,120,200,.85);display:none">🛡 방패</button>' +
     '<button id="duelView" style="' + btn + ';left:14px;bottom:84px;padding:10px 14px;font-size:14px;background:rgba(40,50,70,.75)">🎥 3인칭</button>' +
     '<div id="duelEnd" style="display:none;position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:var(--paper);border:3px solid var(--line);border-radius:20px;padding:16px 20px;text-align:center;font-weight:900;font-size:18px;color:#4a3320;min-width:240px;max-width:88vw"></div>';
@@ -4942,6 +4972,22 @@ function openDuel() {
   DUEL.dodgeEl = wrap.querySelector('#duelDodge');
   wrap.querySelector('#dgL').onpointerdown = e => { e.stopPropagation(); duelDodge(-1); };
   wrap.querySelector('#dgR').onpointerdown = e => { e.stopPropagation(); duelDodge(1); };
+  // 한 발짝씩 조준 버튼: 한 번 누르면 살짝 움직이고, 꾹 누르면 계속 움직여요 (폰에서도 미세 조준 가능)
+  DUEL.stepEl = wrap.querySelector('#duelStep');
+  const STEP = { left: [.05, 0], right: [-.05, 0], up: [0, .04], down: [0, -.04] };
+  DUEL.stepEl.querySelectorAll('button').forEach(b => {
+    const k = b.dataset.k; let t1 = null, t2 = null;
+    const nudge = () => {
+      if (!duelCanAim()) return;
+      const [dy, dp] = STEP[k]; DUEL.yaw += dy; DUEL.pitch += dp; duelAimClamp(); vib('key');
+    };
+    const stop = () => { clearTimeout(t1); clearInterval(t2); t1 = t2 = null; };
+    b.onpointerdown = e => {
+      e.stopPropagation(); e.preventDefault(); nudge(); stop();
+      t1 = setTimeout(() => { t2 = setInterval(nudge, 90); }, 280);
+    };
+    b.onpointerup = b.onpointercancel = b.onpointerleave = stop;
+  });
   DUEL.shieldEl = wrap.querySelector('#duelShield'); DUEL.shieldEl.onpointerdown = e => { e.stopPropagation(); duelRaiseShield(); };
   // 키보드: ←→ 방향, ↑↓ 각도, 스페이스 꾹(힘이 차올라요) 떼면 발사, V 시점 (게임 본편 단축키와 겹치지 않게 먼저 받아요)
   const KM = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down' };
@@ -4981,6 +5027,7 @@ function closeDuel() {
   camera.fov = DUEL.fov0 || 50; camera.updateProjectionMatrix();
   if (DUEL.sun0 && window.sun) { sun.position.copy(DUEL.sun0.p); sun.target.position.copy(DUEL.sun0.t); sun.target.updateMatrixWorld(); DUEL.sun0 = null; }
   if (DUEL.loginEl) DUEL.loginEl.style.display = '';
+  if (DUEL.introWas && DUEL.introEl) DUEL.introEl.style.display = '';
   if (DUEL.xhair) { DUEL.xhair.style.display = DUEL.xhairD || ''; DUEL.xhair = null; }
   const inv = document.getElementById('duelInv'); if (inv) inv.remove();
   if (DUEL.wrap) DUEL.wrap.remove(); DUEL.wrap = null; DUEL.hold = false;
